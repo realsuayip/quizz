@@ -27,6 +27,36 @@ from dataclasses import dataclass, field, fields
 from enum import Enum
 from typing import Callable, Iterable, List, Optional, Type, Union
 
+
+__version__ = "0.1.1"
+
+__all__ = [
+    "AlphaNumericValidator",
+    "AlphaValidator",
+    "Answers",
+    "Command",
+    "DigitValidator",
+    "Finish",
+    "Help",
+    "Jump",
+    "MaxLengthValidator",
+    "MinLengthValidator",
+    "MultipleChoiceQuestion",
+    "Next",
+    "opcodes",
+    "Option",
+    "ParameterizedCommand",
+    "Previous",
+    "Question",
+    "Quit",
+    "Quiz",
+    "RegexValidator",
+    "Scheme",
+    "Skip",
+    "ValidationError",
+    "Validator",
+]
+
 ###############
 # BASE MODULE #
 ###############
@@ -211,7 +241,7 @@ class Question:
             stdout(exc)
             return opcodes.CONTINUE
 
-        self.answer = answer
+        self.answer = answer or None
 
         signal_hook(self, "post_answer")
 
@@ -271,6 +301,9 @@ class Question:
 
     @property
     def has_correct_answer(self) -> bool:
+        if not self.has_answer:
+            return False
+
         answer = self.answer
 
         if isinstance(self.answer, Option):
