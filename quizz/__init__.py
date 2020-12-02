@@ -238,7 +238,7 @@ class Question:
                     validate(answer)
 
         except ValidationError as exc:
-            stdout(exc)
+            stdout(str(exc))
             return opcodes.CONTINUE
 
         self.answer = answer or None

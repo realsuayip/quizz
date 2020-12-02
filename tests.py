@@ -1,5 +1,5 @@
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import patch, call
 
 
 from quizz import (
@@ -157,6 +157,67 @@ class TestQuestion(TestCase):
 
         question.ask()
         self.assertTrue(question.has_correct_answer)
+
+    @patch("quizz.stdin", side_effect=["invalid", "A"])
+    @patch("quizz.stdout")
+    def test_option_validation(self, mock_stdout, *_):
+        question = Question(
+            "What?",
+            options=[
+                Option(value="A", expression="Something"),
+                Option(value="B", expression="Other Something"),
+            ],
+        )
+
+        question.ask()
+
+        mock_stdout.assert_called_with(
+            "\nThe selected option is not valid. Available options are: "
+            "\nA) Something\nB) Other Something\n"
+        )
+
+        self.assertEqual(2, question.attempt)
+
+    @patch("quizz.stdin", side_effect=["Invalid1", "AnotherInvalid", "Valid"])
+    @patch("quizz.stdout")
+    def test_validation(self, mock_stdout, *_):
+        question = Question(
+            "What",
+            validators=[
+                AlphaValidator(message="This answer is not alpha."),
+                MaxLengthValidator(13, message="This answer is too long."),
+            ],
+        )
+
+        question.ask()
+
+        mock_stdout.assert_has_calls(
+            [
+                call("This answer is not alpha."),
+                call("This answer is too long."),
+            ]
+        )
+        self.assertEqual(3, question.attempt)
+
+    @patch("quizz.stdin", return_value="Answer")
+    def test_signals(self, *_):
+        question = Question("What?", extra={"number": 10})
+
+        def increment_number(q):
+            q.extra["number"] *= 8
+            q.extra["ans"] = q.answer
+
+        def decrement_number(q):
+            q.extra["number"] -= 5
+            q.extra["ans"] = q.answer
+
+        question.pre_ask = increment_number
+        question.post_answer = decrement_number
+
+        question.ask()
+
+        self.assertEqual(75, question.extra["number"])
+        self.assertEqual(question.answer, question.extra["ans"])
 
 
 class TestValidators(TestCase):
