@@ -13,6 +13,8 @@ from quizz import (
     Validator,
     Question,
     Option,
+    Scheme,
+    Skip,
 )
 
 
@@ -218,6 +220,113 @@ class TestQuestion(TestCase):
 
         self.assertEqual(75, question.extra["number"])
         self.assertEqual(question.answer, question.extra["ans"])
+
+    def test_empty_scheme_has_no_effect(self):
+        from quizz import _field_names  # noqa
+
+        empty = Scheme()
+        question = Question("What?", scheme=empty)
+        question_no_scheme = Question("What?")
+
+        for name in _field_names:
+            if hasattr(question_no_scheme, name):
+                self.assertEqual(
+                    getattr(question_no_scheme, name), getattr(question, name)
+                )
+
+    def test_scheme_skips_unknown_attribute(self):
+        my_scheme = Scheme(display="foobar")
+        question = Question("What?", scheme=my_scheme)
+
+        self.assertFalse(hasattr(question, "display"))
+
+    def test_scheme_skips_empty_strings(self):
+        my_scheme = Scheme(prompt="", option_indicator="")
+        question = Question("What?", scheme=my_scheme)
+
+        self.assertEqual("What?", question.prompt)
+        self.assertEqual(") ", question.option_indicator)
+
+    def test_scheme_overrides_immutable(self):
+        my_scheme = Scheme(
+            prompt="Whats up?",
+            required=False,
+            strip=False,
+            append_column=False,
+            command_delimiter="x",
+            option_indicator="-",
+        )
+
+        question = Question("What?", scheme=my_scheme)
+
+        self.assertEqual("Whats up?", question.prompt)
+        self.assertEqual("x", question.command_delimiter)
+        self.assertEqual("-", question.option_indicator)
+
+        self.assertFalse(question.required)
+        self.assertFalse(question.strip)
+        self.assertFalse(question.append_column)
+
+    def test_scheme_extends_list(self):
+        alpha, digit, max_len = (
+            AlphaValidator(),
+            DigitValidator(),
+            MaxLengthValidator(10),
+        )
+
+        my_scheme = Scheme(
+            validators=[alpha],
+            correct_answers=["SchemeAnswer", "SchemeAnswer2"],
+            commands=[Skip],
+        )
+
+        empty_question = Question("What?", scheme=my_scheme)
+        self.assertEqual([alpha], empty_question.validators)
+        self.assertEqual([Skip], empty_question.commands)
+        self.assertEqual(
+            ["SchemeAnswer", "SchemeAnswer2"], empty_question.correct_answers
+        )
+
+        question = Question(
+            "What?",
+            validators=[digit, max_len],
+            correct_answers=["RealAnswer"],
+            commands=[Skip],
+            scheme=my_scheme,
+        )
+        self.assertEqual([digit, max_len, alpha], question.validators)
+        self.assertEqual([Skip, Skip], question.commands)
+        self.assertEqual(
+            ["RealAnswer", "SchemeAnswer", "SchemeAnswer2"],
+            question.correct_answers,
+        )
+
+    def test_scheme_extends_dict(self):
+        my_scheme = Scheme(extra={"foo": "bar", "baz": "qux"})
+
+        question = Question("What?", scheme=my_scheme)
+        question_with_extra = Question(
+            "What?", extra={"hello": 5}, scheme=my_scheme
+        )
+
+        self.assertEqual({"foo": "bar", "baz": "qux"}, question.extra)
+        self.assertEqual(
+            {"hello": 5, "foo": "bar", "baz": "qux"},
+            question_with_extra.extra,
+        )
+
+    def test_scheme_dict_disallow_key_overriding(self):
+        my_scheme = Scheme(extra={"foo": "bar"})
+        question = Question("What?", extra={"foo": "baz"}, scheme=my_scheme)
+
+        self.assertEqual({"foo": "baz"}, question.extra)
+
+    def test_scheme_allows_external_interference(self):
+        my_scheme = Scheme(prompt="Hello")
+        question = Question("What?")
+
+        question.update_scheme(my_scheme)
+        self.assertEqual("Hello", question.prompt)
 
 
 class TestValidators(TestCase):
