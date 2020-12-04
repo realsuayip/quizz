@@ -1,20 +1,22 @@
 from unittest import TestCase
-from unittest.mock import patch, call
-
+from unittest.mock import call, patch
 
 from quizz import (
-    ValidationError,
+    AlphaNumericValidator,
+    AlphaValidator,
+    Command,
+    DigitValidator,
+    Help,
     MaxLengthValidator,
     MinLengthValidator,
-    AlphaValidator,
-    AlphaNumericValidator,
-    DigitValidator,
-    RegexValidator,
-    Validator,
-    Question,
     Option,
+    Question,
+    RegexValidator,
     Scheme,
     Skip,
+    ValidationError,
+    Validator,
+    opcodes,
 )
 
 
@@ -327,6 +329,122 @@ class TestQuestion(TestCase):
 
         question.update_scheme(my_scheme)
         self.assertEqual("Hello", question.prompt)
+
+    @patch("quizz.stdin", side_effect=["!command", "Answer"])
+    @patch("quizz.stdout")
+    def test_command_no_context(self, mock_stdout, *_):
+        question = Question("What?", required=False)
+        question.ask()
+
+        mock_stdout.assert_called_with(
+            "Commands are disabled for this question."
+        )
+        self.assertEqual("Answer", question.answer)
+
+    @patch("quizz.stdin", side_effect=["/hello", "/search test", "Answer"])
+    @patch("quizz.stdout")
+    def test_command_not_found(self, mock_stdout, *_):
+        # Also tests: command delimiter & first word counts as expression
+        question = Question("What?", command_delimiter="/", commands=[Help])
+        question.ask()
+
+        mock_stdout.assert_has_calls(
+            [
+                call("Command not found: hello"),
+                call("Command not found: search"),
+            ]
+        )
+        self.assertEqual("Answer", question.answer)
+
+    @patch("quizz.stdin", side_effect=["    !hello", "Answer"])
+    @patch("quizz.stdout")
+    def test_command_strips(self, mock_stdout, *_):
+        # Also tests: get_commands
+        question = Question("What?", commands=[Help])
+        question.ask()
+
+        mock_stdout.assert_called_with("Command not found: hello")
+        self.assertEqual([Help], question.get_commands())
+
+    @patch("quizz.stdin", side_effect=["!meow", "!meow", "Cat!"])
+    def test_command_opcode_continue(self, *_):
+        class Meow(Command):
+            expression = "meow"
+
+            def execute(self, question, *args):
+                question.extra["meow_count"] += 1
+                return opcodes.CONTINUE
+
+        meowing_question = Question(
+            "What?", commands=[Meow], extra={"meow_count": 0}, required=False
+        )
+        meowing_question.ask()
+
+        self.assertEqual("Cat!", meowing_question.answer)
+        self.assertEqual(2, meowing_question.extra["meow_count"])
+        self.assertEqual(3, meowing_question.attempt)
+
+    @patch("quizz.stdin", side_effect=["!meow", "!meow", "Cat!"])
+    def test_command_opcode_none(self, *_):
+        # Returning None in opcode does not re-ask the question.
+        # It will re-ask the question if it is required though.
+
+        class Meow(Command):
+            expression = "meow"
+
+            def execute(self, question, *args):
+                question.extra["meow_count"] += 1
+
+        meowing_question = Question(
+            "What?", commands=[Meow], extra={"meow_count": 0}, required=False
+        )
+        meowing_question.ask()
+
+        self.assertIsNone(meowing_question.answer)
+        self.assertEqual(1, meowing_question.extra["meow_count"])
+        self.assertEqual(1, meowing_question.attempt)
+
+    @patch("quizz.stdin", side_effect=["!meow", "!meow", "Cat!"])
+    @patch("quizz.stdout")
+    def test_command_opcode_none_required(self, mock_stdout, *_):
+        # Re-ask the question if it is required even if opcode
+        # is None. use BREAK to bypass required as well.
+
+        class Meow(Command):
+            expression = "meow"
+
+            def execute(self, question, *args):
+                question.extra["meow_count"] += 1
+
+        meowing_question = Question(
+            "What?", commands=[Meow], extra={"meow_count": 0}
+        )
+        meowing_question.ask()
+
+        mock_stdout.assert_has_calls(
+            [
+                call("This question is required."),
+                call("This question is required."),
+            ]
+        )
+        self.assertEqual("Cat!", meowing_question.answer)
+        self.assertEqual(2, meowing_question.extra["meow_count"])
+        self.assertEqual(3, meowing_question.attempt)
+
+    @patch("quizz.stdin", side_effect=["!break", "!meow", "Cat!"])
+    def test_command_opcode_break(self, *_):
+        # Required question is break-able
+        class Break(Command):
+            expression = "break"
+
+            def execute(self, question, *args):
+                return opcodes.BREAK
+
+        question_ = Question("What?", commands=[Break])
+        question_.ask()
+
+        self.assertIsNone(question_.answer)
+        self.assertEqual(1, question_.attempt)
 
 
 class TestValidators(TestCase):
