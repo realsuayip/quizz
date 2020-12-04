@@ -324,7 +324,8 @@ class Question:
         expression, *args = cmd.split()
 
         if not _commands:
-            return None
+            stdout("Commands are disabled for this question.")
+            return opcodes.CONTINUE
 
         for command in _commands:
             if command.expression == expression:
