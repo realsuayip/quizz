@@ -1,3 +1,6 @@
+import re
+import itertools
+
 from unittest import TestCase
 from unittest.mock import call, patch
 
@@ -9,6 +12,7 @@ from quizz import (
     Help,
     MaxLengthValidator,
     MinLengthValidator,
+    MultipleChoiceQuestion,
     Option,
     Question,
     RegexValidator,
@@ -445,6 +449,257 @@ class TestQuestion(TestCase):
 
         self.assertIsNone(question_.answer)
         self.assertEqual(1, question_.attempt)
+
+    @patch("quizz.stdin", side_effect=["!set_extra cat meow", "Answer"])
+    def test_command_with_args(self, *_):
+        class SetExtra(Command):
+            expression = "set_extra"
+
+            def execute(self, question, *args):
+                question.extra[args[0]] = args[1]
+                return opcodes.CONTINUE
+
+        question_ = Question("What?", commands=[SetExtra])
+        question_.ask()
+
+        self.assertEqual("meow", question_.extra["cat"])
+        self.assertEqual("Answer", question_.answer)
+        self.assertEqual(2, question_.attempt)
+
+
+class TestMultipleChoiceQuestion(TestCase):
+    def test_inherits_question(self):
+        self.assertTrue(issubclass(MultipleChoiceQuestion, Question))
+
+    def test_default_instance_attribute_values(self):
+        question = MultipleChoiceQuestion(
+            "What?", options=[Option(value="Hello", expression="World")]
+        )
+
+        self.assertEqual([], question.choices)
+        self.assertEqual("horizontal", question.display)
+        self.assertEqual("letter", question.style)
+        self.assertIsNone(question.style_iterator)
+
+    @patch("quizz.stdin", return_value="Answer")
+    def test_no_options_provided(self, *_):
+        with self.assertRaisesRegex(
+            ValueError,
+            "MultipleChoiceQuestion should"
+            " at least have one member in 'options' or 'choices' attributes.",
+        ):
+            MultipleChoiceQuestion("What?")
+
+    def test_choices_converted_to_options(self):
+        choices = ["Hello", "World"]
+        question = MultipleChoiceQuestion("What?", choices=choices)
+
+        self.assertEqual(len(choices), len(question.options))
+
+        for option, expression in zip(question.get_options(), choices):
+            self.assertEqual(expression, option.expression)
+
+    def test_choices_combined_with_options(self):
+        question = MultipleChoiceQuestion(
+            "What?",
+            choices=["Hello", "World"],
+            options=[Option(value="Hello", expression="World")],
+        )
+
+        self.assertEqual(
+            [
+                Option(value="a", expression="Hello"),
+                Option(value="b", expression="World"),
+                Option(value="Hello", expression="World"),
+            ],
+            question.get_options(),
+        )
+
+    def test_choices_combined_with_options_with_scheme(self):
+        scheme = Scheme(options=[Option(value="Cat", expression="Meow")])
+
+        question = MultipleChoiceQuestion(
+            "What?",
+            choices=["Hello", "World"],
+            options=[Option(value="Hello", expression="World")],
+            scheme=scheme,
+        )
+
+        self.assertEqual(
+            [
+                Option(value="a", expression="Hello"),
+                Option(value="b", expression="World"),
+                Option(value="Hello", expression="World"),
+                Option(value="Cat", expression="Meow"),
+            ],
+            question.get_options(),
+        )
+
+        self.assertEqual(
+            [
+                Option(value="Hello", expression="World"),
+                Option(value="Cat", expression="Meow"),
+            ],
+            question.primitive_options,
+        )
+
+        # External update
+        new_scheme = Scheme(options=[Option(value="Dog", expression="Bark")])
+        question.update_scheme(new_scheme)
+
+        self.assertEqual(
+            [
+                Option(value="Hello", expression="World"),
+                Option(value="Cat", expression="Meow"),
+                Option(value="Dog", expression="Bark"),
+            ],
+            question.primitive_options,
+        )
+
+        self.assertEqual(
+            [
+                Option(value="a", expression="Hello"),
+                Option(value="b", expression="World"),
+                Option(value="Hello", expression="World"),
+                Option(value="Cat", expression="Meow"),
+                Option(value="Dog", expression="Bark"),
+            ],
+            question.get_options(),
+        )
+
+    def test_choices_update_options_with_scheme(self):
+        scheme = Scheme(choices=["Cat", "Dog", "Fish"])
+        question = MultipleChoiceQuestion(
+            "What?", choices=["Chicken"], scheme=scheme
+        )
+
+        self.assertEqual(
+            [
+                Option(value="a", expression="Chicken"),
+                Option(value="b", expression="Cat"),
+                Option(value="c", expression="Dog"),
+                Option(value="d", expression="Fish"),
+            ],
+            question.get_options(),
+        )
+
+        # External update
+        new_scheme = Scheme(choices=["Cow"])
+        question.update_scheme(new_scheme)
+
+        self.assertEqual(
+            [
+                Option(value="a", expression="Chicken"),
+                Option(value="b", expression="Cat"),
+                Option(value="c", expression="Dog"),
+                Option(value="d", expression="Fish"),
+                Option(value="e", expression="Cow"),
+            ],
+            question.get_options(),
+        )
+
+        self.assertEqual([], question.primitive_options)
+
+    def test_invalid_style_iterator(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            re.escape(
+                "Unknown style or invalid style iterator. Built-in styles are:"
+                " (letter, letter_uppercase, number, number_fromzero)"
+            ),
+        ):
+            MultipleChoiceQuestion("What?", choices=["A"], style="?")
+
+    def _test_style(self, style, sample):
+        question = MultipleChoiceQuestion(
+            "What?", style=style, choices=["???" for _ in range(len(sample))]
+        )
+
+        for option, value in zip(question.get_options(), sample):
+            self.assertEqual(value, option.value)
+
+    def test_styles(self):
+        self._test_style("letter", ["a", "b", "c", "d", "e", "f"])
+        self._test_style("letter_uppercase", ["A", "B", "C", "D", "E", "F"])
+        self._test_style("number", ["1", "2", "3", "4", "5", "6"])
+        self._test_style("number_fromzero", ["0", "1", "2", "3", "4", "5"])
+
+    def _test_style_iterator(self, iterator, sample):
+        question = MultipleChoiceQuestion(
+            "What?",
+            style_iterator=iterator,
+            choices=["???" for _ in range(len(sample))],
+        )
+
+        for option, value in zip(question.get_options(), sample):
+            self.assertEqual(value, option.value)
+
+    def test_custom_style_iterators(self):
+        self._test_style_iterator("Love", ["L", "o", "v", "e"])
+        self._test_style_iterator(
+            itertools.cycle("Love"),
+            ["L", "o", "v", "e", "L", "o", "v"],
+        )
+        self._test_style_iterator(
+            ["".join(comb) for comb in itertools.combinations("ABCD", 2)],
+            ["AB", "AC", "AD", "BC", "BD", "CD"],
+        )
+
+    @patch("quizz.stdin", return_value="a")
+    def test_display_none(self, mock_stdin):
+        question = MultipleChoiceQuestion("What?", choices=["A"], display=None)
+        question.ask()
+
+        mock_stdin.assert_called_with("What?: ")
+        self.assertIsNone(question.get_display())
+
+    @patch("quizz.stdin", return_value="a")
+    def test_display_horizontal(self, mock_stdin):
+        question = MultipleChoiceQuestion(
+            "What?", choices=["A", "B", "C", "D"], display="horizontal"
+        )
+
+        question.ask()
+        mock_stdin.assert_called_with(
+            "What?: \na) A  b) B  c) C  d) D\nYour answer: "
+        )
+
+    @patch("quizz.stdin", return_value="a")
+    def test_display_vertical(self, mock_stdin):
+        question = MultipleChoiceQuestion(
+            "What?",
+            choices=["A", "B", "C", "D"],
+            display="vertical",
+            option_indicator="-)",
+        )
+
+        question.ask()
+        mock_stdin.assert_called_with(
+            "What?: \na-)A\nb-)B\nc-)C\nd-)D\nYour answer: "
+        )
+
+    def test_display_invalid(self):
+        question = MultipleChoiceQuestion(
+            "What?", choices=["A"], display="Cat"
+        )
+
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            re.escape(
+                "There is no such display 'Cat'. Built-in displays are:"
+                " (vertical, horizontal). You may create this display by"
+                " implementing get_Cat_display method."
+            ),
+        ):
+            question.get_prompt()
+
+    def test_custom_display_implementation(self):
+        class CustomQuestion(MultipleChoiceQuestion):
+            def get_cat_display(self, prompt):  # noqa
+                return "Meow"
+
+        question = CustomQuestion("What?", choices=["A"], display="cat")
+        self.assertEqual("Meow", question.get_prompt())
 
 
 class TestValidators(TestCase):
