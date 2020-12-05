@@ -398,16 +398,28 @@ class MultipleChoiceQuestion(Question):
     """
 
     choices: List[str] = field(default_factory=list)
-    display: str = "horizontal"
+    display: Optional[str] = "horizontal"
     style: str = "letter"
     style_iterator: Optional[Iterable] = None
 
     def __post_init__(self) -> None:
+        self.primitive_options = self.options
+
         super().__post_init__()
         self.update_options()
 
+        if not self.get_options():
+            raise ValueError(
+                "MultipleChoiceQuestion should at least have one"
+                " member in 'options' or 'choices' attributes."
+            )
+
     def update_scheme(self, scheme: Scheme) -> None:
         super().update_scheme(scheme)
+
+        if scheme.options is not None:
+            self.primitive_options += scheme.options
+
         self.update_options()
 
     def update_options(self) -> None:
@@ -418,7 +430,7 @@ class MultipleChoiceQuestion(Question):
             for value, expression in zip(
                 self.get_style_iterator(), self.choices
             )
-        ]
+        ] + self.primitive_options
 
     def get_style_iterator(self) -> Iterable:
         """
@@ -435,15 +447,15 @@ class MultipleChoiceQuestion(Question):
 
         # Check self.style for built-in styles, else look for a style_iterator.
         style_iterator = (
-            styles.get(self.style)
-            if self.style is not None
-            else self.style_iterator
+            self.style_iterator
+            if self.style_iterator is not None
+            else styles.get(self.style)
         )
 
         if style_iterator is None:
             raise ValueError(
                 "Unknown style or invalid style iterator."
-                " Built-in styles are (%s)" % ", ".join(styles.keys())
+                " Built-in styles are: (%s)" % ", ".join(styles.keys())
             )
 
         return style_iterator
@@ -461,6 +473,9 @@ class MultipleChoiceQuestion(Question):
         try:
             return getattr(self, "get_%s_display" % display)(prompt)
         except AttributeError as exc:
+            if display in ["vertical", "horizontal"]:
+                raise
+
             raise NotImplementedError(
                 "There is no such display '%(display)s'. Built-in displays"
                 " are: (vertical, horizontal). You may create this display"
