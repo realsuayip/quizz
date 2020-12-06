@@ -290,10 +290,10 @@ class Question:
         if required and self.answer is None:
             while self.answer is None:
                 stdout("This question is required.")
-                self.ask()
+                return self.ask()
 
         if self.quiz is not None:
-            self.quiz.next().ask()
+            return self.quiz.next().ask()
 
     @property
     def has_answer(self) -> bool:
@@ -365,7 +365,7 @@ class Question:
             else "No answer"
         )
 
-        return "* Question %d/%d. [%s]:\n" % (
+        return "* Question %d/%d. [%s]\n" % (
             self.sequence + 1,
             len(self.quiz.questions),
             current_answer,
@@ -534,13 +534,15 @@ class Quiz:
         start to test if the test is ready/done.
         """
 
+        default_scheme = Scheme(commands=[Finish])
+        _scheme = scheme if scheme is not None else default_scheme
+
         # Setting up each question in the test.
         for seq, question in enumerate(questions):
             setattr(question, "quiz", self)
             setattr(question, "sequence", seq)
 
-            if scheme is not None:
-                question.update_scheme(scheme)
+            question.update_scheme(_scheme)
 
         self.questions = questions
         self.required_questions = [q for q in questions if q.required]
