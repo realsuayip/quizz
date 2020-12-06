@@ -1,5 +1,5 @@
-import re
 import itertools
+import re
 
 from unittest import TestCase
 from unittest.mock import call, patch
@@ -15,12 +15,14 @@ from quizz import (
     MultipleChoiceQuestion,
     Option,
     Question,
+    Quiz,
     RegexValidator,
     Scheme,
     Skip,
     ValidationError,
     Validator,
     opcodes,
+    Finish,
 )
 
 
@@ -700,6 +702,103 @@ class TestMultipleChoiceQuestion(TestCase):
 
         question = CustomQuestion("What?", choices=["A"], display="cat")
         self.assertEqual("Meow", question.get_prompt())
+
+
+class TestQuiz(TestCase):
+    def test_default_scheme_has_finish_command(self):
+        question = Question("What?")
+        Quiz(questions=[question])
+
+        self.assertEqual([Finish], question.commands)
+
+    def test_empty_scheme_removes_finish_command(self):
+        question = Question("What?")
+        Quiz(questions=[question], scheme=Scheme())
+
+        self.assertEqual([], question.commands)
+
+    @patch("quizz.Question.update_scheme")
+    def test_update_scheme_gets_called(self, mock_update_scheme):
+        my_scheme = Scheme(command_delimiter="**")
+        Quiz(questions=[Question("What?")], scheme=my_scheme)
+
+        mock_update_scheme.assert_called_with(my_scheme)
+
+    def test_quiz_sets_question_sequence_and_self(self):
+        question = Question("What?")
+        question1 = MultipleChoiceQuestion("What?", choices=["A"])
+
+        self.assertEqual(0, question.sequence)
+        self.assertEqual(0, question1.sequence)
+        self.assertIsNone(question.quiz)
+        self.assertIsNone(question1.quiz)
+
+        quiz = Quiz(questions=[question, question1])
+
+        self.assertEqual(0, question.sequence)
+        self.assertEqual(1, question1.sequence)
+        self.assertEqual(quiz, question.quiz)
+        self.assertEqual(quiz, question1.quiz)
+
+    def test_question_pre(self):
+        question = Question("What?")
+        Quiz(questions=[question])
+
+        self.assertEqual(
+            "* Question 1/1. [No answer]\n", question.get_question_pre()
+        )
+
+        question.answer = "Good answer"
+        self.assertEqual(
+            "* Question 1/1. [Good answer]\n", question.get_question_pre()
+        )
+
+        question.answer = Option(value="A", expression="Best answer.")
+        self.assertEqual(
+            "* Question 1/1. [A) Best answer.]\n", question.get_question_pre()
+        )
+
+    def test_question_prompt_changes_with_quiz(self):
+        question = Question("What?")
+        question2 = Question("Hello?")
+        Quiz(questions=[question, question2])
+
+        self.assertEqual(
+            "* Question 1/2. [No answer]\nWhat?: ", question.get_prompt()
+        )
+
+    @patch("quizz.stdin", side_effect=["", "What", "Hello", "!finish"])
+    @patch("quizz.stdout")  # Silent output in test
+    def test_quiz_inquiries_get_incremented(self, *_):
+        questions = [Question("What?"), Question("Hello?")]
+        quiz = Quiz(questions=questions)
+        quiz.start()
+
+        self.assertEqual(4, quiz.inquiries)
+        self.assertEqual(sum(q.attempt for q in questions), quiz.inquiries)
+
+    @patch("quizz.stdin", side_effect=["Yes", "No", "!finish"])
+    def test_quiz_index_corresponds_question_sequence(self, *_):
+        question = Question("What?")
+        question1 = Question("Hello?")
+
+        question.pre_ask = question1.pre_ask = lambda q: self.assertEqual(
+            q.sequence, q.quiz.index
+        )
+        quiz = Quiz(questions=[question, question1])
+        quiz.start()
+
+    def test_required_questions_and_min_inquiries(self):
+        q = Question("Hello?")
+        q1 = Question("Hello?", required=False)
+        q2 = Question("Hello?")
+        q3 = Question("Hello?")
+        q4 = Question("Hello?", required=False)
+
+        quiz = Quiz(questions=[q, q1, q2, q3, q4])
+
+        self.assertEqual([q, q2, q3], quiz.required_questions)
+        self.assertEqual(3, quiz.min_inquiries)
 
 
 class TestValidators(TestCase):
