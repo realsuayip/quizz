@@ -800,6 +800,159 @@ class TestQuiz(TestCase):
         self.assertEqual([q, q2, q3], quiz.required_questions)
         self.assertEqual(3, quiz.min_inquiries)
 
+    @patch("quizz.stdin", return_value="!finish")
+    @patch("quizz.stdout")
+    def test_start(self, *_):
+        q = Question("Hello?", required=False)
+        q1 = Question("Hello?", required=False)
+        quiz = Quiz(questions=[q, q1])
+
+        quiz.start()
+
+        self.assertEqual(1, quiz.inquiries)
+        self.assertEqual(1, q.attempt)
+        self.assertEqual(0, q1.attempt)
+
+    @patch("quizz.stdin", return_value="!finish")
+    @patch("quizz.stdout")
+    def test_start_arbitrary_index(self, *_):
+        q = Question("Hello?", required=False)
+        q1 = Question("Hello?", required=False)
+        quiz = Quiz(questions=[q, q1])
+
+        quiz.index = 1
+        quiz.start()
+
+        self.assertEqual(1, quiz.inquiries)
+        self.assertEqual(0, q.attempt)
+        self.assertEqual(1, q1.attempt)
+
+    def test_done_ready_api(self):
+        q1, q2, q3 = (
+            Question("What?"),
+            Question("What?", required=False),
+            Question("What?"),
+        )
+
+        quiz = Quiz(questions=[q1, q2, q3])
+
+        self.assertFalse(quiz.is_ready)
+        self.assertFalse(quiz.is_done)
+
+        q1.answer = q3.answer = "A"
+
+        self.assertFalse(quiz.is_ready)
+        self.assertFalse(quiz.is_done)
+
+        quiz.inquiries = 2
+
+        self.assertTrue(quiz.is_ready)
+        self.assertFalse(quiz.is_done)
+
+        q2.answer = "A"
+
+        self.assertTrue(quiz.is_ready)
+        self.assertTrue(quiz.is_done)
+
+        q1.answer = None
+
+        self.assertFalse(quiz.is_ready)
+        self.assertFalse(quiz.is_done)
+
+    @patch("quizz.stdin", side_effect=["A", "A", "A", "!finish"])
+    @patch("quizz.stdout")
+    def test_is_ready(self, mock_stdout, *_):
+        q1, q2, q3, q4 = (
+            Question("What?"),
+            Question("What?"),
+            Question("What?", required=False),
+            Question("What?", required=False),
+        )
+
+        q1.pre_ask = lambda q: self.assertFalse(q.quiz.is_ready)
+        q2.pre_ask = lambda q: self.assertFalse(q.quiz.is_ready)
+        q3.pre_ask = lambda q: self.assertTrue(q.quiz.is_ready)
+        q4.pre_ask = lambda q: self.assertTrue(q.quiz.is_ready)
+
+        quiz = Quiz(questions=[q1, q2, q3, q4])
+        quiz.start()
+
+        mock_stdout.assert_has_calls(
+            [
+                call(
+                    "\nYou now have answered all the required questions on"
+                    " this test. You may finish, but There are still some"
+                    " optional questions left (3, 4).\n"
+                ),
+                call("\n[Ready, some optional questions left (4).]\n"),
+            ]
+        )
+
+    @patch("quizz.stdin", side_effect=["A", "A", "A", "A", "A", "!finish"])
+    @patch("quizz.stdout")
+    def test_is_done(self, mock_stdout, *_):
+        q1, q2, q3, q4 = (
+            Question("What?"),
+            Question("What?"),
+            Question("What?", required=False),
+            Question("What?", required=False),
+        )
+
+        q1.pre_ask = q2.pre_ask = (
+            lambda q: self.assertFalse(q.quiz.is_done)
+            if q.attempt == 1
+            else self.assertTrue(q.quiz.is_done)
+        )
+
+        q3.pre_ask = q4.pre_ask = lambda q: self.assertFalse(q.quiz.is_done)
+
+        quiz = Quiz(questions=[q1, q2, q3, q4])
+        quiz.start()
+
+        mock_stdout.assert_has_calls(
+            [
+                call(
+                    "\nYou now have answered all the required questions on"
+                    " this test. You may finish, but There are still some"
+                    " optional questions left (3, 4).\n"
+                ),
+                call("\n[Ready, some optional questions left (4).]\n"),
+                call(
+                    "\nYou now have answered all the questions on this test."
+                    " You may finish or revise your questions if you want.\n"
+                ),
+                call("\n[Completed, waiting for finish command.]\n"),
+            ]
+        )
+
+    @patch("quizz.stdin", side_effect=["", "A", "!finish"])
+    @patch("quizz.stdout")
+    def test_ready_done_verbosity_changes(self, *_):
+        question = Question("What?", required=False)
+        quiz = Quiz(questions=[question])
+
+        self.assertFalse(hasattr(quiz, "_ready_verbose"))
+        self.assertFalse(hasattr(quiz, "_done_verbose"))
+
+        quiz.start()
+
+        self.assertFalse(quiz._ready_verbose)
+        self.assertFalse(quiz._done_verbose)
+
+    @patch("quizz.stdin", side_effect=["!finish"])
+    @patch("quizz.stdout")
+    def test_pre_ask_extendable(self, *_):
+        class MyQuiz(Quiz):
+            def pre_ask(self):
+                self.questions[self.index].answer = "Answer"
+                super().pre_ask()
+
+        question = Question("What?")
+        quiz = MyQuiz(questions=[question])
+        quiz.start()
+
+        self.assertEqual("Answer", question.answer)
+
 
 class TestValidators(TestCase):
     def _test_validator(self, validate, bad_value, good_value):
