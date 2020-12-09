@@ -2,19 +2,22 @@ import itertools
 import re
 
 from unittest import TestCase
-from unittest.mock import call, patch
+from unittest.mock import ANY, call, patch
 
 from quizz import (
     AlphaNumericValidator,
     AlphaValidator,
     Command,
     DigitValidator,
+    Finish,
     Help,
+    Jump,
     MaxLengthValidator,
     MinLengthValidator,
     MultipleChoiceQuestion,
     Option,
     Question,
+    Quit,
     Quiz,
     RegexValidator,
     Scheme,
@@ -22,7 +25,6 @@ from quizz import (
     ValidationError,
     Validator,
     opcodes,
-    Finish,
 )
 
 
@@ -952,6 +954,196 @@ class TestQuiz(TestCase):
         quiz.start()
 
         self.assertEqual("Answer", question.answer)
+
+    def test_jump_next_previous(self):
+        q0, q1, q2, q3 = (
+            MultipleChoiceQuestion("What?", choices=["a"]),
+            MultipleChoiceQuestion("What?", choices=["b"]),
+            MultipleChoiceQuestion("What?", choices=["c"]),
+            MultipleChoiceQuestion("What?", choices=["d"]),
+        )
+
+        quiz = Quiz(questions=[q0, q1, q2, q3])
+
+        self.assertEqual(q1, quiz.next())
+        self.assertEqual(q3, quiz.previous())
+
+        quiz.index = 2
+
+        self.assertEqual(q3, quiz.next())
+        self.assertEqual(q1, quiz.previous())
+
+        self.assertEqual(q0, quiz.jump(0))
+        self.assertEqual(q1, quiz.jump(1))
+        self.assertEqual(q2, quiz.jump(2))
+        self.assertEqual(q3, quiz.jump(3))
+
+
+class TestCommandClass(TestCase):
+    @patch("quizz.stdin", return_value="!test")
+    def test_unimplemented_command(self, *_):
+        class MyCommand(Command):  # noqa
+            expression = "test"
+            pass
+
+        self.assertEqual("No description provided.", MyCommand.description)
+
+        question = Question("What?", commands=[MyCommand])
+
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            "Define a behaviour for this command using execute method.",
+        ):
+            question.ask()
+
+    @patch("quizz.stdin", side_effect=["!skip"])
+    @patch("quizz.stdout")
+    def test_skip(self, mock_stdout, *_):
+        question = Question("Hello?", commands=[Skip], required=False)
+        question.answer = "World"
+        question.ask()
+
+        mock_stdout.assert_called_with("You decided to skip this question.")
+
+        self.assertIsNone(question.answer)
+        self.assertEqual(1, question.attempt)
+
+    @patch("quizz.stdin", side_effect=["!skip", "Answer"])
+    @patch("quizz.stdout")
+    def test_skip_inoperative_for_required(self, mock_stdout, *_):
+        question = Question("Hello?", commands=[Skip])
+        question.ask()
+
+        mock_stdout.assert_has_calls(
+            [
+                call("You decided to skip this question."),
+                call("This question is required."),
+            ]
+        )
+
+        self.assertEqual("Answer", question.answer)
+        self.assertEqual(2, question.attempt)
+
+    @patch("quizz.stdin", side_effect=["!quit"])
+    def test_quit(self, *_):
+        question = Question("What", commands=[Quit])
+
+        with self.assertRaises(SystemExit) as cm:
+            question.ask()
+
+        self.assertEqual(0, cm.exception.code)
+
+    @patch("quizz.stdin", side_effect=["!help", "Answer"])
+    @patch("quizz.stdout")
+    def test_help_base(self, mock_stdout, *_):
+        question = Question("What?", commands=[Help], required=False)
+        question.ask()
+
+        mock_stdout.assert_called_with(
+            "\nAvailable commands are:\n!help: Shows the help message.\n"
+        )
+        self.assertEqual("Answer", question.answer)
+
+    @patch("quizz.stdin", side_effect=["/help", "Answer"])
+    @patch("quizz.stdout")
+    def test_help_custom_message(self, mock_stdout, *_):
+        question = Question(
+            "What?",
+            commands=[Help(message="How ya doing?."), Quit, Skip],
+            command_delimiter="/",
+            required=False,
+        )
+
+        question.ask()
+
+        mock_stdout.assert_called_with(
+            "How ya doing?.\nAvailable commands are:\n/help: Shows the help"
+            " message.\n/quit: Quits the program.\n/skip: Skips this question"
+            " without answering.\n"
+        )
+        self.assertEqual("Answer", question.answer)
+
+    @patch("quizz.stdin", side_effect=["!help", "Answer"])
+    @patch("quizz.stdout")
+    def test_help_no_command_list(self, mock_stdout, *_):
+        question = Question(
+            "What?", commands=[Help(message="Howdy?", with_command_list=False)]
+        )
+        question.ask()
+
+        mock_stdout.assert_called_with("Howdy?")
+        self.assertEqual("Answer", question.answer)
+
+    @patch(
+        "quizz.stdin",
+        side_effect=[
+            "!jump",
+            "!jump potato",
+            "!jump 0",
+            "!jump 52",
+            "Ans",
+            "!finish",
+        ],
+    )
+    @patch("quizz.stdout")
+    def test_jump_no_arg_or_invalid(self, mock_stdout, *_):
+        question = Question("What?", commands=[Jump, Finish])
+        quiz = Quiz(questions=[question])
+        quiz.start()
+
+        mock_stdout.assert_has_calls(
+            [
+                call("Please specify a question number to jump."),
+                call("Question number needs to be a positive integer."),
+                call("Question number needs to be a positive integer."),
+                call("Can't jump to question 52, no such question."),
+                ANY,
+            ]
+        )
+
+        self.assertEqual("Ans", question.answer)
+
+    @patch(
+        "quizz.stdin",
+        side_effect=[
+            "!jump 4",
+            "!jump 1",
+            "!jump 4",
+            "!jump 1",
+            "Answer",
+            "!finish",
+        ],
+    )
+    @patch("quizz.stdout")
+    def test_jump(self, mock_stdout, *_):
+        q1, q2, q3, q4 = (
+            Question("What?"),
+            MultipleChoiceQuestion("What?", choices=["a"], required=False),
+            MultipleChoiceQuestion("What?", choices=["c"], required=False),
+            Question("What?", required=False),
+        )
+
+        quiz = Quiz(
+            questions=[q1, q2, q3, q4], scheme=Scheme(commands=[Jump, Finish])
+        )
+
+        quiz.start()
+
+        mock_stdout.assert_has_calls(
+            [
+                call("Jumped to question 4."),
+                call("Jumped to question 1."),
+                call("Jumped to question 4."),
+                call("Jumped to question 1."),
+                ANY,
+            ]
+        )
+
+        self.assertEqual(3, q1.attempt)
+        self.assertEqual(1, q2.attempt)
+        self.assertEqual(2, q4.attempt)
+        self.assertEqual(0, q3.attempt)
+        self.assertEqual("Answer", q1.answer)
 
 
 class TestValidators(TestCase):
