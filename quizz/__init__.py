@@ -617,12 +617,10 @@ class Quiz:
         return getattr(self, name) if hasattr(self, name) else True
 
     def get_ready_message(self, verbose: bool) -> str:  # noqa
-        optional_questions = filter(
-            lambda q: not any([q.required, q.has_answer]), self.questions
-        )
-
         sequences = ", ".join(
-            map(lambda q: str(q.sequence + 1), optional_questions)
+            str(q.sequence + 1)
+            for q in self.questions
+            if not any([q.required, q.has_answer])
         )
 
         if verbose:
