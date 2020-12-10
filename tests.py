@@ -7,6 +7,7 @@ from unittest.mock import ANY, call, patch
 from quizz import (
     AlphaNumericValidator,
     AlphaValidator,
+    Answers,
     Command,
     DigitValidator,
     Finish,
@@ -15,7 +16,9 @@ from quizz import (
     MaxLengthValidator,
     MinLengthValidator,
     MultipleChoiceQuestion,
+    Next,
     Option,
+    Previous,
     Question,
     Quit,
     Quiz,
@@ -72,6 +75,14 @@ class TestQuestion(TestCase):
         question = Question("What?")
         question.ask()
         self.assertEqual("Answer", question.answer)
+
+    @patch("quizz.stdin", side_effect=[""])
+    def test_answer_persists_on_empty_input(self, *_):
+        question = Question("What?", required=False)
+        question.answer = "Previous Answer"
+        question.ask()
+
+        self.assertEqual("Previous Answer", question.answer)
 
     @patch("quizz.stdin", return_value="A")
     def test_answer_is_set_as_option(self, *_):
@@ -769,6 +780,11 @@ class TestQuiz(TestCase):
             "* Question 1/2. [No answer]\nWhat?: ", question.get_prompt()
         )
 
+        question.update_scheme(Scheme(append_column=False))
+        self.assertEqual(
+            "* Question 1/2. [No answer]\nWhat?", question.get_prompt()
+        )
+
     @patch("quizz.stdin", side_effect=["", "What", "Hello", "!finish"])
     @patch("quizz.stdout")  # Silent output in test
     def test_quiz_inquiries_get_incremented(self, *_):
@@ -780,6 +796,7 @@ class TestQuiz(TestCase):
         self.assertEqual(sum(q.attempt for q in questions), quiz.inquiries)
 
     @patch("quizz.stdin", side_effect=["Yes", "No", "!finish"])
+    @patch("quizz.stdout")
     def test_quiz_index_corresponds_question_sequence(self, *_):
         question = Question("What?")
         question1 = Question("Hello?")
@@ -1144,6 +1161,105 @@ class TestCommandClass(TestCase):
         self.assertEqual(2, q4.attempt)
         self.assertEqual(0, q3.attempt)
         self.assertEqual("Answer", q1.answer)
+
+    @patch(
+        "quizz.stdin",
+        side_effect=list(
+            itertools.chain.from_iterable(
+                itertools.repeat(["!next", "!previous"], 16)
+            )
+        )
+        + ["!finish"],
+    )
+    @patch("quizz.stdout")
+    def test_next_previous(self, *_):
+        q1, q2, q3 = (
+            Question("What?"),
+            Question("What? 2"),
+            Question("What? 3"),
+        )
+
+        quiz = Quiz(
+            questions=[q1, q2, q3],
+            scheme=Scheme(commands=[Next, Previous, Finish], required=False),
+        )
+
+        quiz.start()
+        self.assertEqual(17, q1.attempt)
+        self.assertEqual(16, q2.attempt)
+        self.assertEqual(0, q3.attempt)
+
+    @patch("quizz.stdin", side_effect=["!finish"])
+    @patch("quizz.stdout")
+    def test_finish(self, *_):
+        question = Question("Hello?", required=False)
+        quiz = Quiz(questions=[question])
+        quiz.start()
+
+        self.assertIsNone(question.answer)
+        self.assertEqual(1, question.attempt)
+
+    @patch("quizz.stdin", side_effect=["!finish", "Answer", "Cat", "!finish"])
+    @patch("quizz.stdout")
+    def test_finish_error_on_uncompleted(self, mock_stdout, *_):
+        q1, q2, q3 = (
+            Question("Hello?"),
+            Question("World?"),
+            Question("Hey?", required=False),
+        )
+
+        quiz = Quiz(questions=[q1, q2, q3])
+        quiz.start()
+
+        mock_stdout.assert_has_calls(
+            [
+                call(
+                    "There are still some required questions to answer: (1, 2)"
+                ),
+                ANY,
+            ]
+        )
+
+        self.assertEqual("Answer", q1.answer)
+        self.assertEqual("Cat", q2.answer)
+        self.assertIsNone(q3.answer)
+
+        self.assertEqual(2, q1.attempt)
+        self.assertEqual(1, q2.attempt)
+        self.assertEqual(1, q3.attempt)
+
+    @patch(
+        "quizz.stdin",
+        side_effect=["Me", "Handsome", "", "a", "!answers", "!finish"],
+    )
+    @patch("quizz.stdout")
+    def test_answers(self, mock_stdout, *_):
+        q1, q2, q3, q4 = (
+            Question("What?"),
+            Question("How?"),
+            Question("When?", required=False),
+            MultipleChoiceQuestion("Which?", choices=["This"]),
+        )
+
+        quiz = Quiz(
+            questions=[q1, q2, q3, q4],
+            scheme=Scheme(commands=[Answers, Finish]),
+        )
+        quiz.start()
+
+        mock_stdout.assert_has_calls(
+            [
+                ANY,
+                call(
+                    "\nCurrent answers:\n"
+                    "1. What? -> [Me]\n"
+                    "2. How? -> [Handsome]\n"
+                    "~3. When? -> [No answer]\n"
+                    "4. Which? -> [a) This]\n"
+                ),
+                ANY,
+            ]
+        )
 
 
 class TestValidators(TestCase):
