@@ -214,27 +214,9 @@ class Question:
             options = self.get_options()
 
             if options:
-                for option in options:
-                    if answer_strip == option.value:
-                        answer = option
-                        break
-                else:
-                    raise ValidationError(
-                        "\nThe selected option is not valid."
-                        " Available options are: %s\n"
-                        % "".join(
-                            "\n%s%s%s"
-                            % (
-                                option.value,
-                                self.option_indicator,
-                                option.expression,
-                            )
-                            for option in options
-                        )
-                    )
+                answer = self.match_option(answer_strip, options)
             else:
-                for validate in self.validators:
-                    validate(answer)
+                self.validate(answer)
 
         except ValidationError as exc:
             stdout(str(exc))
@@ -243,6 +225,28 @@ class Question:
         self.answer = answer or self.answer or None
 
         signal_hook(self, "post_answer")
+
+    def validate(self, answer):
+        for validate in self.validators:
+            validate(answer)
+
+    def match_option(self, value, options):
+        try:
+            return next(option for option in options if value == option.value)
+        except StopIteration as exc:
+            raise ValidationError(
+                "\nThe selected option is not valid."
+                " Available options are: %s\n"
+                % "".join(
+                    "\n%s%s%s"
+                    % (
+                        option.value,
+                        self.option_indicator,
+                        option.expression,
+                    )
+                    for option in options
+                )
+            ) from exc
 
     def ask(self) -> None:
         """
