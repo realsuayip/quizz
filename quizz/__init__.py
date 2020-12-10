@@ -316,22 +316,22 @@ class Question:
         if such command exists and return the opcode.
         """
 
-        _commands = self.get_commands()
+        commands = self.get_commands()
 
         # Expression is the word until the first space, remaining words
-        # are parsed as arguments and sent to command.
+        # are parsed as arguments and sent to the command.
         expression, *args = cmd.split()
 
-        if not _commands:
+        if not commands:
             stdout("Commands are disabled for this question.")
             return opcodes.CONTINUE
 
-        for command in _commands:
-            if command.expression == expression:
-                return command().execute(self, *args)
-
-        stdout("Command not found: %s" % expression)
-        return opcodes.CONTINUE
+        try:
+            command = next(c for c in commands if c.expression == expression)
+            return command().execute(self, *args)
+        except StopIteration:
+            stdout("Command not found: %s" % expression)
+            return opcodes.CONTINUE
 
     def get_prompt(self) -> str:
         prompt = self.prompt
