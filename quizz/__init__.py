@@ -595,16 +595,10 @@ class Quiz:
         message, verbosity of this message changes after first time.
         """
 
-        optionals = filter(
-            lambda q: not any([q.required, q.has_answer]), self.questions
-        )
-
-        verbose = (
-            self._ready_verbose if hasattr(self, "_ready_verbose") else True
-        )
-
-        message = self.get_ready_message(verbose, optionals)
+        verbose = self._get_verbosity("_ready_verbose")
+        message = self.get_ready_message(verbose)
         stdout(message)
+
         self._ready_verbose: bool = False  # noqa
 
     def done(self) -> None:
@@ -613,28 +607,34 @@ class Quiz:
         verbosity of this message changes after first time.
         """
 
-        verbose = (
-            self._done_verbose if hasattr(self, "_done_verbose") else True
-        )
-
+        verbose = self._get_verbosity("_done_verbose")
         message = self.get_done_message(verbose)
-
         stdout(message)
+
         self._done_verbose: bool = False  # noqa
 
-    def get_ready_message(self, verbose, optionals) -> str:  # noqa
-        numbers = ", ".join(map(lambda q: str(q.sequence + 1), optionals))
+    def _get_verbosity(self, name: str) -> bool:
+        return getattr(self, name) if hasattr(self, name) else True
+
+    def get_ready_message(self, verbose: bool) -> str:  # noqa
+        optional_questions = filter(
+            lambda q: not any([q.required, q.has_answer]), self.questions
+        )
+
+        sequences = ", ".join(
+            map(lambda q: str(q.sequence + 1), optional_questions)
+        )
 
         if verbose:
             return (
                 "\nYou now have answered all the required questions on this"
                 " test. You may finish, but There are still some optional"
-                " questions left (%s).\n" % numbers
+                " questions left (%s).\n" % sequences
             )
 
-        return "\n[Ready, some optional questions left (%s).]\n" % numbers
+        return "\n[Ready, some optional questions left (%s).]\n" % sequences
 
-    def get_done_message(self, verbose) -> str:  # noqa
+    def get_done_message(self, verbose: bool) -> str:  # noqa
         if verbose:
             return (
                 "\nYou now have answered all the questions on this test. "
