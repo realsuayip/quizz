@@ -45,7 +45,6 @@ __all__ = [
     "Next",
     "opcodes",
     "Option",
-    "ParameterizedCommand",
     "Previous",
     "Question",
     "Quit",
@@ -241,7 +240,7 @@ class Question:
             stdout(str(exc))
             return opcodes.CONTINUE
 
-        self.answer = answer or None
+        self.answer = answer or self.answer or None
 
         signal_hook(self, "post_answer")
 
@@ -470,18 +469,15 @@ class MultipleChoiceQuestion(Question):
         if display is None:
             return prompt
 
-        try:
-            return getattr(self, "get_%s_display" % display)(prompt)
-        except AttributeError as exc:
-            if display in ["vertical", "horizontal"]:
-                raise
-
+        if not hasattr(self, "get_%s_display" % display):
             raise NotImplementedError(
                 "There is no such display '%(display)s'. Built-in displays"
                 " are: (vertical, horizontal). You may create this display"
                 " by implementing get_%(display)s_display method."
                 % {"display": display}
-            ) from exc
+            )
+
+        return getattr(self, "get_%s_display" % display)(prompt)
 
     def _option_format(self) -> Iterable:
         return (
@@ -679,22 +675,10 @@ class Command:
     expression: str = ""
     description: str = "No description provided."
 
-    def execute(self, question: Question, *args: str) -> Optional[opcodes]:
-        raise NotImplementedError(
-            "Define a behaviour for this command using execute method."
-        )
-
-
-class ParameterizedCommand(Command):
-    """
-    A command that can be initiated with some parameters. Check the
-    implementation of Help for an example.
-    """
-
     def __call__(self, *args, **kwargs) -> Command:
         return self
 
-    def execute(self, question, *args):
+    def execute(self, question: Question, *args: str) -> Optional[opcodes]:
         raise NotImplementedError(
             "Define a behaviour for this command using execute method."
         )
@@ -717,7 +701,7 @@ class Quit(Command):
         sys.exit(0)
 
 
-class Help(ParameterizedCommand):
+class Help(Command):
     expression = "help"
     description = "Shows the help message."
 
@@ -803,7 +787,7 @@ class Finish(Command):
         ]
 
         stdout(
-            "There are still some required questions to answer (%s):"
+            "There are still some required questions to answer: (%s)"
             % ", ".join(str(q.sequence + 1) for q in unanswered)
         )
         return opcodes.CONTINUE
@@ -815,23 +799,21 @@ class Answers(Command):
 
     def execute(self, question, *args):
         clauses_with_answers = "\n".join(
-            (
+            "%d. %s -> [%s]"
+            % (
+                q.sequence + 1,
+                q.prompt,
                 (
-                    "%d. %s -> [%s%s%s]"
-                    % (
-                        q.sequence + 1,
-                        q.prompt,
-                        q.answer.value,
-                        q.option_indicator,
-                        q.answer.expression,
-                    )
-                    if isinstance(q.answer, Option)
-                    else q.answer
+                    str(q.answer.value)
+                    + str(q.option_indicator)
+                    + str(q.answer.expression)
                 )
-                if q.has_answer
-                else "%d. %s -> [No answer]" % (q.sequence + 1, q.prompt)
-                for q in question.quiz.questions
+                if isinstance(q.answer, Option)
+                else q.answer,
             )
+            if q.has_answer
+            else "~%d. %s -> [No answer]" % (q.sequence + 1, q.prompt)
+            for q in question.quiz.questions
         )
 
         stdout("\nCurrent answers:\n%s\n" % clauses_with_answers)
