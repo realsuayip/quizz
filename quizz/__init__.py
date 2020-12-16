@@ -28,7 +28,7 @@ from enum import Enum
 from typing import Callable, Iterable, List, Optional, Type, Union
 
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = [
     "AlphaNumericValidator",
@@ -161,14 +161,38 @@ class Question:
         """Each time this question is asked, this gets incremented by 1."""
 
         self.quiz: Optional[Quiz] = None
-        self.sequence: int = 0
-        """Sequence of this question in Quiz object."""
+        """
+        Quiz this question is assigned to. This will be set if the question
+        is mentioned in 'questions' keyword argument on Quiz initialization.
+        If the question is added externally (i.e. through the mutation of
+        Quiz.questions), the update() method of the quiz needs to be called
+        so that the question can be assigned to Quiz.
+
+        Alternatively you may assign this manually, in which case the scheme
+        of the quiz will not be applied, unlike in update method.
+        """
+
+        self.mounted_schemes: List[Scheme] = []
+        """
+        List of Scheme objects that are applied to this question through
+        update_scheme method. Duplicate schemes may be found if the method is
+        called with force=True.
+        """
 
         if self.scheme is not None:
             self.update_scheme(self.scheme)
 
-    def update_scheme(self, scheme: Scheme) -> None:
+    def __eq__(self, other):
+        return id(self) == id(other)
+
+    def __str__(self):
+        return "<%s: %s>" % (self.__class__.__name__, self.prompt)
+
+    def update_scheme(self, scheme: Scheme, force: bool = False) -> None:
         """Update this object based on a given scheme object."""
+
+        if (scheme in self.mounted_schemes) and not force:
+            return
 
         for name in _field_names:
             value = getattr(scheme, name)
@@ -186,6 +210,8 @@ class Question:
                 setattr(self, name, {**value, **getattr(self, name)})
             else:
                 setattr(self, name, value)
+
+        self.mounted_schemes.append(scheme)
 
     def _ask(self) -> Optional[opcodes]:
         """
@@ -297,6 +323,15 @@ class Question:
 
         if self.quiz is not None:
             return self.quiz.next().ask()
+
+    @property
+    def sequence(self):
+        """Sequence of this question in Quiz object."""
+
+        if self.quiz is None:
+            return 0
+
+        return self.quiz.questions.index(self)
 
     @property
     def has_answer(self) -> bool:
@@ -417,8 +452,8 @@ class MultipleChoiceQuestion(Question):
                 " member in 'options' or 'choices' attributes."
             )
 
-    def update_scheme(self, scheme: Scheme) -> None:
-        super().update_scheme(scheme)
+    def update_scheme(self, scheme: Scheme, **kwargs) -> None:
+        super().update_scheme(scheme, **kwargs)
 
         if scheme.options is not None:
             self.primitive_options += scheme.options
@@ -535,24 +570,33 @@ class Quiz:
         """
 
         default_scheme = Scheme(commands=[Finish])
-        _scheme = scheme if scheme is not None else default_scheme
-
-        # Setting up each question in the test.
-        for seq, question in enumerate(questions):
-            setattr(question, "quiz", self)
-            setattr(question, "sequence", seq)
-
-            question.update_scheme(_scheme)
+        self.scheme = scheme if scheme is not None else default_scheme
+        """
+        The scheme of this Quiz. This scheme will be mounted to each question
+        assigned to this, if exact scheme object is not mounted before.
+        """
 
         self.questions = questions
-        self.required_questions = [q for q in questions if q.required]
-        self.min_inquiries: int = len(self.required_questions)
+        self.update()
+
+    def update(self, force_scheme: bool = False) -> None:
+        for question in self.questions:
+            question.quiz = self
+            question.update_scheme(self.scheme, force=force_scheme)
 
     def start(self) -> None:
         """
         Starts the quiz by asking the first question.
         """
         self.questions[self.index].ask()
+
+    @property
+    def min_inquiries(self) -> int:
+        return len(self.required_questions)
+
+    @property
+    def required_questions(self) -> List[Question]:
+        return [question for question in self.questions if question.required]
 
     @property
     def is_ready(self) -> bool:
