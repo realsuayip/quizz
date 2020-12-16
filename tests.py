@@ -32,6 +32,14 @@ from quizz import (
 
 
 class TestQuestion(TestCase):
+    def test_eq(self):
+        a, b = Question("?"), Question("?")
+        self.assertFalse(a == b)
+
+    def test_str(self):
+        question = Question("What?")
+        self.assertEqual("<Question: What?>", str(question))
+
     def test_empty_prompt_raises_error(self):
         with self.assertRaisesRegex(
             ValueError, "A question should at least define a prompt."
@@ -241,6 +249,28 @@ class TestQuestion(TestCase):
 
         self.assertEqual(75, question.extra["number"])
         self.assertEqual(question.answer, question.extra["ans"])
+
+    def test_update_scheme_no_force(self):
+        my_scheme = Scheme(commands=[Jump])
+        question = Question("What?", scheme=my_scheme)
+
+        self.assertEqual([my_scheme], question.mounted_schemes)
+
+        question.update_scheme(my_scheme)
+
+        self.assertEqual([my_scheme], question.mounted_schemes)
+        self.assertEqual([Jump], question.commands)
+
+    def test_update_scheme_force(self):
+        my_scheme = Scheme(commands=[Jump])
+        question = Question("What?", scheme=my_scheme)
+
+        self.assertEqual([my_scheme], question.mounted_schemes)
+
+        question.update_scheme(my_scheme, force=True)
+
+        self.assertEqual([my_scheme, my_scheme], question.mounted_schemes)
+        self.assertEqual([Jump, Jump], question.commands)
 
     def test_empty_scheme_has_no_effect(self):
         from quizz import _field_names  # noqa
@@ -483,6 +513,10 @@ class TestQuestion(TestCase):
 
 
 class TestMultipleChoiceQuestion(TestCase):
+    def test_str(self):
+        question = MultipleChoiceQuestion("What?", choices=["A"])
+        self.assertEqual("<MultipleChoiceQuestion: What?>", str(question))
+
     def test_inherits_question(self):
         self.assertTrue(issubclass(MultipleChoiceQuestion, Question))
 
@@ -735,7 +769,7 @@ class TestQuiz(TestCase):
         my_scheme = Scheme(command_delimiter="**")
         Quiz(questions=[Question("What?")], scheme=my_scheme)
 
-        mock_update_scheme.assert_called_with(my_scheme)
+        mock_update_scheme.assert_called_with(my_scheme, force=False)
 
     def test_quiz_sets_question_sequence_and_self(self):
         question = Question("What?")
@@ -752,6 +786,74 @@ class TestQuiz(TestCase):
         self.assertEqual(1, question1.sequence)
         self.assertEqual(quiz, question.quiz)
         self.assertEqual(quiz, question1.quiz)
+
+    def test_update_manually(self):
+        a, b = Question("A"), Question("B")
+
+        quiz = Quiz(questions=[a])
+        quiz.questions.append(b)
+
+        self.assertIsNone(b.quiz)
+        self.assertEqual([a, b], quiz.required_questions)
+        self.assertEqual(0, b.sequence)
+
+        b.quiz = quiz  # Manual assignment, instead of quiz.update()
+
+        self.assertEqual(quiz, b.quiz)
+        self.assertEqual(1, b.sequence)
+        self.assertEqual([], b.mounted_schemes)
+
+    def test_update(self):
+        a, b = Question("a"), Question("b")
+
+        quiz = Quiz(questions=[a])
+        quiz.questions.append(b)
+
+        self.assertIsNone(b.quiz)
+        self.assertEqual([a, b], quiz.required_questions)
+        self.assertEqual(0, b.sequence)
+
+        quiz.update()
+
+        self.assertEqual(quiz, b.quiz)
+        self.assertEqual(1, b.sequence)
+
+        # update() should add Quiz's scheme. (default scheme, in this case)
+        self.assertEqual([Scheme(commands=[Finish])], b.mounted_schemes)
+
+    def test_update_scheme_applies(self):
+        my_scheme = Scheme(commands=[Skip])
+
+        a, b = Question("a"), Question("b")
+        quiz = Quiz(questions=[a], scheme=my_scheme)
+
+        quiz.questions.append(b)
+        quiz.update()
+
+        self.assertEqual([my_scheme], b.mounted_schemes)
+
+    def test_update_scheme_do_not_force(self):
+        # Same scheme is not applied twice if force_scheme=False
+        my_scheme = Scheme(commands=[Skip])
+
+        a, b = Question("a"), Question("b", scheme=my_scheme)
+        quiz = Quiz(questions=[a], scheme=my_scheme)
+
+        quiz.questions.append(b)
+        quiz.update()
+
+        self.assertEqual([my_scheme], b.mounted_schemes)
+
+    def test_update_scheme_force(self):
+        my_scheme = Scheme(commands=[Skip])
+
+        a, b = Question("a"), Question("b", scheme=my_scheme)
+        quiz = Quiz(questions=[a], scheme=my_scheme)
+
+        quiz.questions.append(b)
+        quiz.update(force_scheme=True)
+
+        self.assertEqual([my_scheme, my_scheme], b.mounted_schemes)
 
     def test_question_pre(self):
         question = Question("What?")
