@@ -141,6 +141,104 @@ You can also pass fields for `Question` even if you assign a scheme. In such cas
 immutable fields will be overridden. Lists and dictionaries will be extended.
 If there is a key clash in dictionary, the value given in `Question` field will be used instead.
 If the value of field defined in `Scheme` is None or an empty string (for string fields) it
-will be discarded (fields of `Question` will be used).
+will be discarded (fields of `Question` will be used). This behaviour is also true when
+applying multiple schemes.
 
+Quizzes can also take scheme objects. In that case, each question in the
+quiz will have the scheme object mounted *after their initialization*. So,
+for a ``Question`` **the order of** scheme mounting can be described as:
+    
+    Question fields > Scheme of the Question > Scheme of Quiz
+
+Keep in mind that a particular scheme will only get mounted once,
+if you want to mount a scheme twice for any reason, you have to use `update_scheme` and `update`
+methods while `force` and `force_scheme` keyword arguments set to `True`, respectively in the
+contexts of `Question` and `Quiz`.
+
+### Option objects
+Majority of the time, the answer to a question needs to be selected from
+a set of options. `Option` class is the way of defining these options. For
+example:
+
+````python
+yes, no = Option(value="y", expression="Yes"), Option(value="n", expression="No")
+
+question = Question("Are you OK?", options=[yes, no])
+question.ask()
+
+# The answer will be an Option object (yes, no)
+answer = question.answer
+````
+In the example above, if the user inputs anything other than option
+values ("y" and "n"), a `ValidationError` will occur internally and
+the question will be re-asked.
+
+Including `options` means that the question will no longer accept non-option answers,
+while the validators passed through the related field will be discarded.
+Also, notice that the answer is set as an `Option` object, not `str`. All of these behaviour
+can be changed by overriding the `validate` and `match_option` methods of `Question`.
+
+Keep in mind that the field `correct_answers` uses the **value** of
+the `Option` to determine whether it is correct or not. This design is so,
+because you might not always have the `Option` object around as you most likely
+generate it in-line through list comprehensions; just like in the case
+of `MultipleChoiceQuestion`. If this doesn't convince you, this behaviour
+can be changed by overriding `has_correct_answer` property method of `Question`.
+
+### Question objects
+
+Let's inspect question objects to find out what we can do with them
+before and after the answer has been given.
+
+##### Basic attributes
+
+| Attribute      | Description |
+| ----------- | ----------- |
+| answer      | The answer given to this question, set to `None` in case of no/empty answer.
+| attempt     | Number of answer attempts this question had. Attempts increase when the question gets re-asked for any reason (e.g. validation errors). 
+| quiz        | The `Quiz` this question belongs to. Set to `None` if not found in a quiz context.
+| sequence    | Index of this question in an assigned `Quiz`.
+| mounted_schemes | List of schemes that are applied to this question (by any means).
+| has_answer  | Shorthand for: ```question.answer is not None```
+| has_correct_answer | Returns a boolean indicating whether the given answer is found in `correct_answers` field.
+
+##### Basic methods
+| Method      | Description |
+| ----------- | ----------- |
+| ask         | Asks the questions by calling the `input` function internally.
+| update_scheme(scheme, force) | Mount given scheme object. If `force` set to `True`, signature of the scheme will be ignored.
+
+##### Signal mechanisms
+
+Questions can get attributes that points to a callable. This callable will be called depending
+on the the type of attribute you set. We will call these *signals*. There are currently 2 signals that
+can be assigned to a question: `pre_ask` and `post_answer`. As their names suggest, these signals will
+be executed just before the question is asked and when the answer attribute is set, respectively. 
+These signals take one argument, the `Question` object. For example:
+
+````python
+question = Question("Howdy?")
+
+# Set post_answer signal so that the answer is outputted
+# just as the answer is set
+question.post_answer = lambda q: print(q.answer)
+question.ask()
+````
+
+Signals can be helpful especially in a quiz context where the order
+of questions might be undetermined. If you want to attach a signal
+to many questions, the example above might be a bit tedious. In such
+a case, you can inherit from `Question` and implement
+`post_answer` (or whichever signal you like) as a **staticmethod**.
+
+##### Other notes regarding Question objects
+
+* Avoid using `options` for MultipleChoiceQuestion as the
+whole purpose of this class is to abstract away the
+work on `Option` objects (through `choices`). However, `options`
+and `choices` are compatible and can be used together.
+
+* Do not refrain from extending/overriding `Question` classes
+to add functionality apt to your purposes. They are
+designed to be extendable.
 
