@@ -242,3 +242,107 @@ and `choices` are compatible and can be used together.
 to add functionality apt to your purposes. They are
 designed to be extendable.
 
+### Quiz objects
+
+Quiz objects are the way of packing a set of questions together. These
+objects are very useful if you want to build a test-like structure, which
+is generally the case. Apart from asking questions sequentially Quiz objects also
+provide these functionality:
+
+* Allows for commands such as `Next`, `Previous` and `Jump` to traverse through questions.
+* Tracks whether each required or non-required questions are answered via attributes
+`is_ready` and `is_done`, and outputs an info message in appropriate situations.
+
+##### Basic attributes
+
+| Attribute      | Description |
+| ----------- | ----------- |
+| index | The sequence of question that is being (or going to be) asked.
+| inquiries | The sum of attempts of questions.
+| questions | The list of questions on this quiz.
+| scheme | The scheme of this Quiz, if none specified during initialization, this will be the default scheme.
+| is_done | A boolean that indicates whether all the questions on the quiz has an answer.
+| is_ready | Similar to `is_done`, but for required questions only.
+| required_questions | List of required questions.
+| min_inquiries | Minimum number of `Question` attempts needed before the quiz can be finished.
+
+
+##### Basic methods
+| Method      | Description |
+| ----------- | ----------- |
+| start       | Starts the quiz by asking the first question.
+| update(force_scheme) | Assigns the `Quiz` object for each question on the quiz, along with its scheme. You need to call this if you mutate the list of questions after initialization.
+
+### Commands
+
+Commands are provided per-question basis, and they are the way of providing
+meta. Commands can be executed via specified command delimiter (default `!`), and
+need to be present (as classes or objects) in `commands` field.
+You can create your own commands through `Command` class. Commands return an
+opcode (through `opcodes` enum) which determines what to do after the execution.
+Here are the available opcodes and what they do:
+
+
+| opcode      | Description |
+| ----------- | ----------- |
+| `CONTINUE` | Re-asks the question.
+| `BREAK` | Break out of the question loop, thus end the input stream.
+| `JUMP`  | `Quiz` Return this along with a question sequence to ask that question next.
+
+Aside from these opcodes, you can also return nothing (`None`), in which case
+the question will not be re-asked unless it is required. 
+
+##### Built-in commands
+
+| Command      | Expression | Description | opcode(s) returned | 
+| ----------- | ----------- | ------ |  ---------- |
+| `Skip`      | skip | Set the answer of this question to `None` | `None`
+| `Quit`      | quit | Calls `sys.exit(0)`, thus exiting the whole program. | N/A
+| `Help(message="", with_command_list=True)` | help | Outputs given help message. If `with_command_list` is set to `True`, it will also output list of available commands with their description. | `CONTINUE`  
+| `Jump` | jump \<seq\> | Jumps to specified question. | `JUMP`
+| `Next` | next | Jumps to next question. | `JUMP`
+| `Previous` | previous | Jumps to previous question. | `JUMP`
+| `Finish` | finish | Ends the quiz provided that all the required questions are answered. | `BREAK` or `CONTINUE`
+| `Answers` | answers | Outputs the current answers for each question in the quiz. | `CONTINUE`
+
+### Validators
+
+Validators validate the input given to a question. `ValidationError` is the
+exception class to be raised when the given input is not valid. Here is an
+example implementation of a validator:
+
+````python
+from quizz import ValidationError, Question
+
+def validate_word_count(answer):
+    # Check if the answer has at least 5 words.
+    count = len(answer.split())
+    
+    if count < 5:
+        raise ValidationError("Your answer needs at least 5 words!")
+
+question = Question("Name 5 or more mammals.", validators=[validate_word_count])
+````
+
+The example above will check if the word has at least 5 words. If the
+user inputs a non-valid string the question will be re-asked until a
+valid answer has been given.
+
+Quizz also provides class-based validators (from which all the built-in validators
+inherit). You can use `Validator` class to create your own class-based validators, which
+can also take arguments.
+
+##### Built-in validators
+
+Built-in validators are: 
+
+* `MaxLengthValidator`
+* `MinLengthValidator`
+* `AlphaValidator`
+* `AlphaNumericValidator`
+* `DigitValidator`
+* `RegexValidator`
+
+By default, class based validators take two keyword arguments: `against` and `message`.
+`against` is the value to be tested against, for example `MaxLengthValidator`'s max
+length or  `RegexValidator`'s regex pattern.
