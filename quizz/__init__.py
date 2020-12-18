@@ -28,7 +28,7 @@ from enum import Enum
 from typing import Callable, Iterable, List, Optional, Type, Union
 
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "AlphaNumericValidator",
@@ -294,20 +294,9 @@ class Question:
         else:
             op = response
 
-        # Special opcodes related to Quiz
-        if self.quiz is not None:
-            op_map = {
-                opcodes.PREVIOUS: self.quiz.previous,
-                opcodes.NEXT: self.quiz.next,
-                opcodes.JUMP: self.quiz.jump,
-            }
+        if op == opcodes.JUMP:
+            return self.quiz.jump(*args).ask()
 
-            func = op_map.get(op)
-
-            if func is not None:
-                return func(*args).ask()  # noqa
-
-        # Regular opcodes
         if op == opcodes.CONTINUE:
             return self.ask()
 
@@ -322,7 +311,7 @@ class Question:
                 return self.ask()
 
         if self.quiz is not None:
-            return self.quiz.next().ask()
+            return self.quiz.jump(self.quiz.index + 1).ask()
 
     @property
     def sequence(self):
@@ -619,12 +608,6 @@ class Quiz:
         except IndexError:
             return self.questions[0]
 
-    def next(self) -> Question:
-        return self.jump(self.index + 1)
-
-    def previous(self) -> Question:
-        return self.jump(self.index - 1)
-
     def pre_ask(self) -> None:
         """
         This method is called just before a question gets asked in the quiz to
@@ -698,8 +681,9 @@ class Quiz:
 class opcodes(Enum):
     """
     Opcodes for commands.
-    JUMP, NEXT, PREVIOUS (internal usage) Used to make corresponding
-    commands work.
+
+    JUMP: Return this opcode with a question sequence to ask that question
+    in a quiz context.
 
     CONTINUE: Return this opcode in a command to re-ask the current question.
     BREAK: Return this opcode to forcibly break out of question loop.
@@ -711,10 +695,7 @@ class opcodes(Enum):
 
     CONTINUE = 0
     BREAK = 1
-
     JUMP = 2
-    NEXT = 3
-    PREVIOUS = 4
 
 
 class Command:
@@ -809,7 +790,7 @@ class Next(Command):
     description = "Jumps to next question."
 
     def execute(self, question, *args):
-        return opcodes.NEXT
+        return opcodes.JUMP, question.quiz.index + 1
 
 
 class Previous(Command):
@@ -817,7 +798,7 @@ class Previous(Command):
     description = "Jumps to previous question."
 
     def execute(self, question, *args):
-        return opcodes.PREVIOUS
+        return opcodes.JUMP, question.quiz.index - 1
 
 
 class Finish(Command):

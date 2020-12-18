@@ -1074,7 +1074,7 @@ class TestQuiz(TestCase):
 
         self.assertEqual("Answer", question.answer)
 
-    def test_jump_next_previous(self):
+    def test_jump_method(self):
         q0, q1, q2, q3 = (
             MultipleChoiceQuestion("What?", choices=["a"]),
             MultipleChoiceQuestion("What?", choices=["b"]),
@@ -1083,14 +1083,6 @@ class TestQuiz(TestCase):
         )
 
         quiz = Quiz(questions=[q0, q1, q2, q3])
-
-        self.assertEqual(q1, quiz.next())
-        self.assertEqual(q3, quiz.previous())
-
-        quiz.index = 2
-
-        self.assertEqual(q3, quiz.next())
-        self.assertEqual(q1, quiz.previous())
 
         self.assertEqual(q0, quiz.jump(0))
         self.assertEqual(q1, quiz.jump(1))
