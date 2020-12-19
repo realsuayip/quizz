@@ -33,8 +33,9 @@ from quizz import (
 
 class TestQuestion(TestCase):
     def test_eq(self):
-        a, b = Question("?"), Question("?")
+        a, b, c = Question("?"), Question("?"), 5
         self.assertFalse(a == b)
+        self.assertFalse(b == c)  # NotImplemented
 
     def test_str(self):
         question = Question("What?")

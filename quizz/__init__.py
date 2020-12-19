@@ -25,10 +25,19 @@ import sys
 
 from dataclasses import dataclass, field, fields
 from enum import Enum
-from typing import Callable, Iterable, List, Optional, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+)
 
-
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 __all__ = [
     "AlphaNumericValidator",
@@ -64,7 +73,7 @@ stdin = input
 stdout = print
 
 
-def signal_hook(obj, method: str):
+def signal_hook(obj: Any, method: str) -> None:
     """
     Call this method if this method is attribute of obj.
     Used to call question signals. Method should be static, the
@@ -107,7 +116,7 @@ class Scheme:
     style_iterator: Optional[Iterable] = None
 
 
-_field_names = [f.name for f in fields(Scheme)]
+_field_names: List[str] = [f.name for f in fields(Scheme)]
 
 
 @dataclass
@@ -186,10 +195,13 @@ class Question:
         if self.scheme is not None:
             self.update_scheme(self.scheme)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Question):
+            return NotImplemented
+
         return id(self) == id(other)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "<%s: %s>" % (self.__class__.__name__, self.prompt)
 
     def update_scheme(self, scheme: Scheme, force: bool = False) -> None:
@@ -214,34 +226,33 @@ class Question:
 
         self.mounted_schemes.append(scheme)
 
-    def _ask(self) -> Optional[opcodes]:
+    def _ask(self) -> Optional[Union[opcodes, Tuple[Any]]]:
         """
         Internal ask method for: setting real input, getting command opcodes,
         validation and setting up signals.
         """
 
         self.attempt += 1
-
         signal_hook(self, "pre_ask")
 
+        answer: Optional[Union[str, Option]]
+
         answer = stdin(self.get_prompt())
-        answer_strip = answer.strip()
+        strip = answer.strip()
 
         if self.get_strip():
-            answer = answer_strip
+            answer = strip
 
-        # Execute command
-        if len(answer_strip) > 1 and answer_strip.startswith(
-            self.command_delimiter
-        ):
-            return self.execute_command(answer_strip[1:])
+        # Command execution
+        if len(strip) > 1 and strip.startswith(self.command_delimiter):
+            return self.execute_command(strip[1:])
 
         # Validation
         try:
             options = self.get_options()
 
             if options:
-                answer = self.match_option(answer_strip, options)
+                answer = self.match_option(strip, options)
             else:
                 self.validate(answer)
 
@@ -249,15 +260,17 @@ class Question:
             stdout(str(exc))
             return opcodes.CONTINUE
 
+        # Set answer
         self.answer = answer or self.answer or None
 
         signal_hook(self, "post_answer")
+        return None
 
-    def validate(self, answer):
+    def validate(self, answer: str) -> None:
         for validate in self.validators:
             validate(answer)
 
-    def match_option(self, value, options):
+    def match_option(self, value: str, options: List[Option]) -> Option:
         try:
             return next(option for option in options if value == option.value)
         except StopIteration as exc:
@@ -288,7 +301,9 @@ class Question:
             self.quiz.pre_ask()
 
         response = self._ask()
-        args: List[str] = []
+
+        op: Optional[opcodes]
+        args: List[Any]
 
         if isinstance(response, tuple):
             op, *args = response
@@ -296,7 +311,8 @@ class Question:
             op = response
 
         if op == opcodes.JUMP:
-            return self.quiz.jump(*args).ask()
+            assert self.quiz is not None, "Missing quiz object for %s" % self
+            return self.quiz.jump(*args).ask()  # noqa
 
         if op == opcodes.CONTINUE:
             return self.ask()
@@ -307,15 +323,14 @@ class Question:
         required = self.get_required()
 
         if required and self.answer is None:
-            while self.answer is None:
-                stdout("This question is required.")
-                return self.ask()
+            stdout("This question is required.")
+            return self.ask()
 
         if self.quiz is not None:
             return self.quiz.jump(self.quiz.index + 1).ask()
 
     @property
-    def sequence(self):
+    def sequence(self) -> int:
         """Sequence of this question in Quiz object."""
 
         if self.quiz is None:
@@ -339,17 +354,23 @@ class Question:
 
         return answer in self.get_correct_answers()
 
-    def execute_command(self, cmd: str) -> Optional[opcodes]:
+    def execute_command(
+        self, request: str
+    ) -> Optional[Union[opcodes, Tuple[Any]]]:
         """
         For inputs starting with command delimiter, check
-        if such command exists and return the opcode.
+        if such command exists, execute it if so, and return the opcode.
+
+        :param request: Complete command string (with arguments).
         """
 
         commands = self.get_commands()
 
         # Expression is the word until the first space, remaining words
         # are parsed as arguments and sent to the command.
-        expression, *args = cmd.split()
+        expression: str
+        args: List[str]
+        expression, *args = request.split()  # ^ PEP 526 ^
 
         if not commands:
             stdout("Commands are disabled for this question.")
@@ -374,6 +395,7 @@ class Question:
         """
         In a Quiz context, get question metadata for output.
         """
+        assert self.quiz is not None, "Missing quiz object for %s" % self
 
         current_answer = (
             (
@@ -442,8 +464,8 @@ class MultipleChoiceQuestion(Question):
                 " member in 'options' or 'choices' attributes."
             )
 
-    def update_scheme(self, scheme: Scheme, **kwargs) -> None:
-        super().update_scheme(scheme, **kwargs)
+    def update_scheme(self, scheme: Scheme, force: bool = False) -> None:
+        super().update_scheme(scheme, force)
 
         if scheme.options is not None:
             self.primitive_options += scheme.options
@@ -466,7 +488,7 @@ class MultipleChoiceQuestion(Question):
         styles. For example "love" will output l) choice1 o) choice2 etc.
         """
 
-        styles = {
+        styles: Dict[str, Iterable] = {
             "letter": string.ascii_letters,
             "letter_uppercase": string.ascii_uppercase,
             "number": itertools.count(start=1),
@@ -488,7 +510,7 @@ class MultipleChoiceQuestion(Question):
 
         return style_iterator
 
-    def get_display(self) -> str:
+    def get_display(self) -> Optional[str]:
         return self.display
 
     def get_prompt(self) -> str:
@@ -508,7 +530,7 @@ class MultipleChoiceQuestion(Question):
 
         return getattr(self, "get_%s_display" % display)(prompt)
 
-    def _option_format(self) -> Iterable:
+    def _option_format(self) -> Iterable[str]:
         return (
             "%s%s%s" % (option.value, self.option_indicator, option.expression)
             for option in self.options
@@ -648,7 +670,7 @@ class Quiz:
     def _get_verbosity(self, name: str) -> bool:
         return getattr(self, name) if hasattr(self, name) else True
 
-    def get_ready_message(self, verbose: bool) -> str:  # noqa
+    def get_ready_message(self, verbose: bool) -> str:
         sequences = ", ".join(
             str(q.sequence + 1)
             for q in self.questions
@@ -810,13 +832,13 @@ class Finish(Command):
         if question.quiz.is_ready:
             return opcodes.BREAK
 
-        unanswered = [
-            q for q in question.quiz.required_questions if not q.has_answer
-        ]
-
         stdout(
             "There are still some required questions to answer: (%s)"
-            % ", ".join(str(q.sequence + 1) for q in unanswered)
+            % ", ".join(
+                str(q.sequence + 1)
+                for q in question.quiz.required_questions
+                if not q.has_answer
+            )
         )
         return opcodes.CONTINUE
 
