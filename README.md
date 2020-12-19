@@ -36,13 +36,13 @@ we will see how to exploit it to construct more useful question clauses.
 If you run this snippet you will see that it behaves a bit different from
 `input` function:
     
-* It will append a column and a space to the end of the prompt
+* It will append a colon and a space to the end of the prompt
 * It will re-ask the question in case of an empty answer
 * It will strip spaces from the answer
 
 This is due to default `Question` configuration (namely question scheme).
 All of these behaviour can be customized and respectively correspond to
-`append_column`, `required` and `strip` fields.
+`append_colon`, `required` and `strip` fields.
 
 ### Question fields
 
@@ -93,8 +93,8 @@ case the answer attribute of the question object will be None).
 ##### strip `True`
 A boolean, if set to `True` will call `strip` function for the given input.
 
-##### append_column `True`
-A boolean, if set to `True` will append a column and space to the prompt.
+##### append_colon `True`
+A boolean, if set to `True` will append a colon and space to the prompt.
 For example "How are you doing?" will be asked as "How are you doing?: "
 
 ##### command_delimiter `!`
