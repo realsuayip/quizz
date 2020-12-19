@@ -322,7 +322,7 @@ class Question:
 
         required = self.get_required()
 
-        if required and self.answer is None:
+        if required and not self.has_answer:
             stdout("This question is required.")
             return self.ask()
 
