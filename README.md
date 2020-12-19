@@ -1,4 +1,4 @@
-# quizz (WIP)
+# quizz
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![codecov](https://codecov.io/gh/realsuayip/quizz/branch/master/graph/badge.svg?token=CKUP39Y2IW)](https://codecov.io/gh/realsuayip/quizz)
@@ -36,13 +36,12 @@ we will see how to exploit it to construct more useful question clauses.
 If you run this snippet you will see that it behaves a bit different from
 `input` function:
     
-* It will append a column and a space to the end of the prompt
 * It will re-ask the question in case of an empty answer
 * It will strip spaces from the answer
 
 This is due to default `Question` configuration (namely question scheme).
-All of these behaviour can be customized and respectively correspond to
-`append_column`, `required` and `strip` fields.
+These behaviour can be customized and respectively correspond to
+`required` and `strip` fields.
 
 ### Question fields
 
@@ -93,9 +92,11 @@ case the answer attribute of the question object will be None).
 ##### strip `True`
 A boolean, if set to `True` will call `strip` function for the given input.
 
-##### append_column `True`
-A boolean, if set to `True` will append a column and space to the prompt.
-For example "How are you doing?" will be asked as "How are you doing?: "
+##### suffix
+A string that will be appended to the given prompt.
+
+##### prefix
+A string that will be prepended to the given prompt.
 
 ##### command_delimiter `!`
 A string that will mark the start of a command. See Commands section to learn more.
@@ -140,9 +141,8 @@ question = Question("Howdy?", scheme=my_scheme)
 You can also pass fields for `Question` even if you assign a scheme. In such case,
 immutable fields will be overridden. Lists and dictionaries will be extended.
 If there is a key clash in dictionary, the value given in `Question` field will be used instead.
-If the value of field defined in `Scheme` is None or an empty string (for string fields) it
-will be discarded (fields of `Question` will be used). This behaviour is also true when
-applying multiple schemes.
+If the value of field defined in `Scheme` is `None` it will be discarded (fields of `Question` will be used).
+This behaviour is also true when applying multiple schemes.
 
 Quizzes can also take scheme objects. In that case, each question in the
 quiz will have the scheme object mounted *after their initialization*. So,
