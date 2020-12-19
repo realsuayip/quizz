@@ -63,7 +63,9 @@ class TestQuestion(TestCase):
 
         self.assertTrue(question.required)
         self.assertTrue(question.strip)
-        self.assertTrue(question.append_column)
+
+        self.assertEqual("", question.suffix)
+        self.assertEqual("", question.prefix)
 
         self.assertEqual("!", question.command_delimiter)
         self.assertEqual(") ", question.option_indicator)
@@ -126,24 +128,47 @@ class TestQuestion(TestCase):
         self.assertEqual("spaced", question.answer)
         self.assertEqual(" spaced ", question_no_strip.answer)
 
-    @patch("quizz.stdin")
-    def test_append_column(self, mock_stdin):
-        mock_stdin.return_value = "Answer"
-
+    @patch("quizz.stdin", return_value="Answer")
+    def test_suffix(self, mock_stdin):
         question = Question("What?")
-        question_with_no_column = Question("What?", append_column=False)
+        question_with_suffix = Question("What?", suffix="test")
 
-        self.assertTrue(question.get_append_column())
-        self.assertFalse(question_with_no_column.get_append_column())
+        self.assertEqual("", question.get_suffix())
+        self.assertEqual("test", question_with_suffix.get_suffix())
 
-        self.assertEqual("What?: ", question.get_prompt())
-        self.assertEqual("What?", question_with_no_column.get_prompt())
+        self.assertEqual("What?", question.get_prompt())
+        self.assertEqual("What?test", question_with_suffix.get_prompt())
 
         question.ask()
-        mock_stdin.assert_called_with("What?: ")
-
-        question_with_no_column.ask()
         mock_stdin.assert_called_with("What?")
+
+        question_with_suffix.ask()
+        mock_stdin.assert_called_with("What?test")
+
+    @patch("quizz.stdin", return_value="Answer")
+    def test_prefix(self, mock_stdin):
+        question_with_prefix = Question("What?", prefix="test2")
+
+        self.assertEqual("test2", question_with_prefix.get_prefix())
+        self.assertEqual("test2What?", question_with_prefix.get_prompt())
+
+        question_with_prefix.ask()
+        mock_stdin.assert_called_with("test2What?")
+
+    @patch("quizz.stdin", return_value="Answer")
+    def test_prefix_suffix(self, mock_stdin):
+        question_with_prefix_suffix = Question(
+            "What?", prefix="Pre", suffix="Suf"
+        )
+
+        self.assertEqual("Pre", question_with_prefix_suffix.get_prefix())
+        self.assertEqual("Suf", question_with_prefix_suffix.get_suffix())
+        self.assertEqual(
+            "PreWhat?Suf", question_with_prefix_suffix.get_prompt()
+        )
+
+        question_with_prefix_suffix.ask()
+        mock_stdin.assert_called_with("PreWhat?Suf")
 
     @patch("quizz.stdin", side_effect=["Answer", ""])
     def test_has_answer(self, *_):
@@ -291,19 +316,20 @@ class TestQuestion(TestCase):
 
         self.assertFalse(hasattr(question, "display"))
 
-    def test_scheme_skips_empty_strings(self):
+    def test_scheme_does_not_skip_empty_strings(self):
         my_scheme = Scheme(prompt="", option_indicator="")
         question = Question("What?", scheme=my_scheme)
 
-        self.assertEqual("What?", question.prompt)
-        self.assertEqual(") ", question.option_indicator)
+        self.assertEqual("", question.prompt)
+        self.assertEqual("", question.option_indicator)
 
     def test_scheme_overrides_immutable(self):
         my_scheme = Scheme(
             prompt="Whats up?",
             required=False,
             strip=False,
-            append_column=False,
+            suffix="abc",
+            prefix="def",
             command_delimiter="x",
             option_indicator="-",
         )
@@ -313,10 +339,11 @@ class TestQuestion(TestCase):
         self.assertEqual("Whats up?", question.prompt)
         self.assertEqual("x", question.command_delimiter)
         self.assertEqual("-", question.option_indicator)
+        self.assertEqual("abc", question.suffix)
+        self.assertEqual("def", question.prefix)
 
         self.assertFalse(question.required)
         self.assertFalse(question.strip)
-        self.assertFalse(question.append_column)
 
     def test_scheme_extends_list(self):
         alpha, digit, max_len = (
@@ -699,7 +726,7 @@ class TestMultipleChoiceQuestion(TestCase):
         question = MultipleChoiceQuestion("What?", choices=["A"], display=None)
         question.ask()
 
-        mock_stdin.assert_called_with("What?: ")
+        mock_stdin.assert_called_with("What?")
         self.assertIsNone(question.get_display())
 
     @patch("quizz.stdin", return_value="a")
@@ -710,7 +737,7 @@ class TestMultipleChoiceQuestion(TestCase):
 
         question.ask()
         mock_stdin.assert_called_with(
-            "What?: \na) A  b) B  c) C  d) D\nYour answer: "
+            "What?\na) A  b) B  c) C  d) D\nYour answer: "
         )
 
     @patch("quizz.stdin", return_value="a")
@@ -724,7 +751,7 @@ class TestMultipleChoiceQuestion(TestCase):
 
         question.ask()
         mock_stdin.assert_called_with(
-            "What?: \na-)A\nb-)B\nc-)C\nd-)D\nYour answer: "
+            "What?\na-)A\nb-)B\nc-)C\nd-)D\nYour answer: "
         )
 
     def test_display_invalid(self):
@@ -879,12 +906,12 @@ class TestQuiz(TestCase):
         Quiz(questions=[question, question2])
 
         self.assertEqual(
-            "* Question 1/2. [No answer]\nWhat?: ", question.get_prompt()
+            "* Question 1/2. [No answer]\nWhat?", question.get_prompt()
         )
 
-        question.update_scheme(Scheme(append_column=False))
+        question.update_scheme(Scheme(suffix="Suf", prefix="Pre"))
         self.assertEqual(
-            "* Question 1/2. [No answer]\nWhat?", question.get_prompt()
+            "* Question 1/2. [No answer]\nPreWhat?Suf", question.get_prompt()
         )
 
     @patch("quizz.stdin", side_effect=["", "What", "Hello", "!finish"])

@@ -28,7 +28,7 @@ from enum import Enum
 from typing import Callable, Iterable, List, Optional, Type, Union
 
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "AlphaNumericValidator",
@@ -93,7 +93,9 @@ class Scheme:
 
     required: Optional[bool] = None
     strip: Optional[bool] = None
-    append_column: Optional[bool] = None
+
+    suffix: Optional[str] = None
+    prefix: Optional[str] = None
 
     command_delimiter: Optional[str] = None
     option_indicator: Optional[str] = None
@@ -136,7 +138,9 @@ class Question:
 
     required: bool = True
     strip: bool = True
-    append_column: bool = True
+
+    suffix: str = ""
+    prefix: str = ""
 
     command_delimiter: str = "!"
     option_indicator: str = ") "
@@ -197,10 +201,7 @@ class Question:
         for name in _field_names:
             value = getattr(scheme, name)
 
-            if value is None or isinstance(value, str) and value == "":
-                continue
-
-            if not hasattr(self, name):
+            if (value is None) or (not hasattr(self, name)):
                 continue
 
             if isinstance(value, list):
@@ -362,13 +363,10 @@ class Question:
             return opcodes.CONTINUE
 
     def get_prompt(self) -> str:
-        prompt = self.prompt
+        prompt = "".join((self.get_prefix(), self.prompt, self.get_suffix()))
 
         if self.quiz is not None:
             prompt = self.get_question_pre() + prompt
-
-        if self.get_append_column():
-            prompt += ": "
 
         return prompt
 
@@ -401,8 +399,11 @@ class Question:
     def get_strip(self) -> bool:
         return self.strip
 
-    def get_append_column(self) -> bool:
-        return self.append_column
+    def get_suffix(self) -> str:
+        return self.suffix
+
+    def get_prefix(self) -> str:
+        return self.prefix
 
     def get_options(self) -> List[Option]:
         return self.options
