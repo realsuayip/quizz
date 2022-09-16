@@ -6,3 +6,5 @@ venv
 .mypy_cache
 .idea
 .tox
+__pycache__/
+.DS_Store

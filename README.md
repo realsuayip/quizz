@@ -13,7 +13,7 @@ Wrappers around Python's print and input functions to create question/answer the
 Simply install using pip:
 
     pip install quizz
- 
+
 quizz supports Python version 3.7 and onwards.
 
 ### Basic usage
@@ -35,7 +35,7 @@ program with `input` function as well. As we discover more on `Question`
 we will see how to exploit it to construct more useful question clauses.
 If you run this snippet you will see that it behaves a bit different from
 `input` function:
-    
+
 * It will re-ask the question in case of an empty answer
 * It will strip spaces from the answer
 
@@ -60,7 +60,7 @@ List of `Option` objects. See Options section to learn more.
 
 ##### commands
 A list that contains `Command` classes or objects. These commands will be available
-in this questions context. See Commands section to learn more. 
+in this questions context. See Commands section to learn more.
 
 ##### correct_answers
 A list of strings that are counted as correct answers. The value `has_correct_answer`
@@ -74,7 +74,7 @@ question = Question("1+2?", correct_answers=["3"])
 question.ask()
 
 # Assuming the answer was correct, this will be True:
-is_correct = question.has_correct_answer  
+is_correct = question.has_correct_answer
 ```
 
 ##### extra
@@ -82,7 +82,7 @@ A user defined dictionary that contains any other extra information about the qu
 This is useful especially in a `Quiz` context if you want to create relations between
 questions with any arbitrary data. For example, let's say you set up a quiz in which
 each question has its own points. In this case you can assign point value to each question
-through this field. 
+through this field.
 
 ##### required `True`
 A boolean, if `True` marks the question as required. Required questions will be asked
@@ -147,7 +147,7 @@ This behaviour is also true when applying multiple schemes.
 Quizzes can also take scheme objects. In that case, each question in the
 quiz will have the scheme object mounted *after their initialization*. So,
 for a ``Question`` **the order of** scheme mounting can be described as:
-    
+
     Question fields > Scheme of the Question > Scheme of Quiz
 
 Keep in mind that a particular scheme will only get mounted once,
@@ -195,7 +195,7 @@ before and after the answer has been given.
 | Attribute      | Description |
 | ----------- | ----------- |
 | answer      | The answer given to this question, set to `None` in case of no/empty answer.
-| attempt     | Number of answer attempts this question had. Attempts increase when the question gets re-asked for any reason (e.g. validation errors). 
+| attempt     | Number of answer attempts this question had. Attempts increase when the question gets re-asked for any reason (e.g. validation errors).
 | quiz        | The `Quiz` this question belongs to. Set to `None` if not found in a quiz context.
 | sequence    | Index of this question in an assigned `Quiz`.
 | mounted_schemes | List of schemes that are applied to this question (by any means).
@@ -213,7 +213,7 @@ before and after the answer has been given.
 Questions can get attributes that points to a callable. This callable will be called depending
 on the the type of attribute you set. We will call these *signals*. There are currently 2 signals that
 can be assigned to a question: `pre_ask` and `post_answer`. As their names suggest, these signals will
-be executed just before the question is asked and when the answer attribute is set, respectively. 
+be executed just before the question is asked and when the answer attribute is set, respectively.
 These signals take one argument, the `Question` object. For example:
 
 ````python
@@ -290,15 +290,15 @@ Here are the available opcodes and what they do:
 | `JUMP`  | `Quiz` Return this along with a question sequence to ask that question next.
 
 Aside from these opcodes, you can also return nothing (`None`), in which case
-the question will not be re-asked unless it is required. 
+the question will not be re-asked unless it is required.
 
 ##### Built-in commands
 
-| Command      | Expression | Description | opcode(s) returned | 
+| Command      | Expression | Description | opcode(s) returned |
 | ----------- | ----------- | ------ |  ---------- |
 | `Skip`      | skip | Set the answer of this question to `None` | `None`
 | `Quit`      | quit | Calls `sys.exit(0)`, thus exiting the whole program. | N/A
-| `Help(message="", with_command_list=True)` | help | Outputs given help message. If `with_command_list` is set to `True`, it will also output list of available commands with their description. | `CONTINUE`  
+| `Help(message="", with_command_list=True)` | help | Outputs given help message. If `with_command_list` is set to `True`, it will also output list of available commands with their description. | `CONTINUE`
 | `Jump` | jump \<seq\> | Jumps to specified question. | `JUMP`
 | `Next` | next | Jumps to next question. | `JUMP`
 | `Previous` | previous | Jumps to previous question. | `JUMP`
@@ -317,7 +317,7 @@ from quizz import ValidationError, Question
 def validate_word_count(answer):
     # Check if the answer has at least 5 words.
     count = len(answer.split())
-    
+
     if count < 5:
         raise ValidationError("Your answer needs at least 5 words!")
 
@@ -334,7 +334,7 @@ can also take arguments.
 
 ##### Built-in validators
 
-Built-in validators are: 
+Built-in validators are:
 
 * `MaxLengthValidator`
 * `MinLengthValidator`
