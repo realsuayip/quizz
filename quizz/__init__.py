@@ -29,11 +29,13 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Generic,
     Iterable,
     List,
     Optional,
     Tuple,
     Type,
+    TypeVar,
     Union,
 )
 
@@ -69,6 +71,12 @@ __all__ = [
 # BASE MODULE #
 ###############
 
+T = TypeVar("T", bound="Question")
+S = TypeVar("S", bound="Scheme")
+Q = TypeVar("Q", bound="Quiz")
+P = TypeVar("P", bound="Option")
+C = TypeVar("C", bound="Command")
+
 stdin = input
 stdout = print
 
@@ -85,7 +93,7 @@ def signal_hook(obj: Any, method: str) -> None:
 
 
 @dataclass
-class Scheme:
+class Scheme(Generic[P, C]):
     """
     An empty Scheme encompassing all of the Question &
     MultipleChoiceQuestion fields.
@@ -95,8 +103,8 @@ class Scheme:
     prompt: Optional[str] = None
 
     validators: Optional[List[Callable[[str], None]]] = None
-    options: Optional[List[Option]] = None
-    commands: Optional[List[Union[Command, Type[Command]]]] = None
+    options: Optional[List[P]] = None
+    commands: Optional[List[Union[C, Type[C]]]] = None
     correct_answers: Optional[List[str]] = None
     extra: Optional[dict] = None
 
@@ -131,7 +139,7 @@ class Option:
 
 
 @dataclass
-class Question:
+class Question(Generic[Q, S, P, C]):
     """
     A question dataclass decorated with variety of methods
     to mutate its attributes & handle I/O.
@@ -140,8 +148,8 @@ class Question:
     prompt: str
 
     validators: List[Callable[[str], None]] = field(default_factory=list)
-    options: List[Option] = field(default_factory=list)
-    commands: List[Union[Command, Type[Command]]] = field(default_factory=list)
+    options: List[P] = field(default_factory=list)
+    commands: List[Union[C, Type[C]]] = field(default_factory=list)
     correct_answers: List[str] = field(default_factory=list)
     extra: dict = field(default_factory=dict)
 
@@ -154,7 +162,7 @@ class Question:
     command_delimiter: str = "!"
     option_indicator: str = ") "
 
-    scheme: Optional[Scheme] = None
+    scheme: Optional[S] = None
     """
     Questions may take a Scheme object to override the its base. This is
     done so that you can define your own generic Scheme instead of passing
@@ -169,11 +177,11 @@ class Question:
         if not self.prompt:
             raise ValueError("A question should at least define a prompt.")
 
-        self.answer: Optional[Union[str, Option]] = None
+        self.answer: Optional[Union[str, P]] = None
         self.attempt: int = 0
         """Each time this question is asked, this gets incremented by 1."""
 
-        self.quiz: Optional[Quiz] = None
+        self.quiz: Optional[Q] = None
         """
         Quiz this question is assigned to. This will be set if the question
         is mentioned in 'questions' keyword argument on Quiz initialization.
@@ -185,7 +193,7 @@ class Question:
         of the quiz will not be applied, unlike in update method.
         """
 
-        self.mounted_schemes: List[Scheme] = []
+        self.mounted_schemes: List[S] = []
         """
         List of Scheme objects that are applied to this question through
         update_scheme method. Duplicate schemes may be found if the method is
@@ -204,7 +212,7 @@ class Question:
     def __str__(self) -> str:
         return "<%s: %s>" % (self.__class__.__name__, self.prompt)
 
-    def update_scheme(self, scheme: Scheme, force: bool = False) -> None:
+    def update_scheme(self, scheme: S, force: bool = False) -> None:
         """Update this object based on a given scheme object."""
 
         if (scheme in self.mounted_schemes) and not force:
@@ -235,7 +243,7 @@ class Question:
         self.attempt += 1
         signal_hook(self, "pre_ask")
 
-        answer: Optional[Union[str, Option]]
+        answer: Optional[Union[str, P]]
 
         answer = stdin(self.get_prompt())
         strip = answer.strip()
@@ -270,7 +278,7 @@ class Question:
         for validate in self.validators:
             validate(answer)
 
-    def match_option(self, value: str, options: List[Option]) -> Option:
+    def match_option(self, value: str, options: List[P]) -> P:
         try:
             return next(option for option in options if value == option.value)
         except StopIteration as exc:
@@ -427,10 +435,10 @@ class Question:
     def get_prefix(self) -> str:
         return self.prefix
 
-    def get_options(self) -> List[Option]:
+    def get_options(self) -> List[P]:
         return self.options
 
-    def get_commands(self) -> List[Union[Command, Type[Command]]]:
+    def get_commands(self) -> List[Union[C, Type[C]]]:
         return self.commands
 
     def get_required(self) -> bool:
@@ -464,7 +472,7 @@ class MultipleChoiceQuestion(Question):
                 " member in 'options' or 'choices' attributes."
             )
 
-    def update_scheme(self, scheme: Scheme, force: bool = False) -> None:
+    def update_scheme(self, scheme: S, force: bool = False) -> None:
         super().update_scheme(scheme, force)
 
         if scheme.options is not None:
@@ -549,7 +557,7 @@ class MultipleChoiceQuestion(Question):
         return self._sep_format(prompt, "\n")
 
 
-class Quiz:
+class Quiz(Generic[T]):
     """
     An object to queue questions. Supports useful commands such as
     Next, Previous, Jump to traverse easily among questions.
@@ -559,7 +567,7 @@ class Quiz:
     """
 
     def __init__(
-        self, questions: List[Question], scheme: Scheme = None
+        self, questions: List[T], scheme: Union[S, None] = None
     ) -> None:
         """
         :param questions: A list of question objects.
@@ -581,7 +589,7 @@ class Quiz:
         start to test if the test is ready/done.
         """
 
-        default_scheme = Scheme(commands=[Finish])
+        default_scheme: Scheme[Option, Command] = Scheme(commands=[Finish])
         self.scheme = scheme if scheme is not None else default_scheme
         """
         The scheme of this Quiz. This scheme will be mounted to each question
@@ -607,7 +615,7 @@ class Quiz:
         return len(self.required_questions)
 
     @property
-    def required_questions(self) -> List[Question]:
+    def required_questions(self) -> List[T]:
         return [question for question in self.questions if question.required]
 
     @property
@@ -625,7 +633,7 @@ class Quiz:
             question.has_answer for question in self.questions
         )
 
-    def jump(self, index: int) -> Question:
+    def jump(self, index: int) -> T:
         try:
             return self.questions[index]
         except IndexError:
@@ -725,10 +733,10 @@ class Command:
     expression: str = ""
     description: str = "No description provided."
 
-    def __call__(self, *args, **kwargs) -> Command:
+    def __call__(self: C, *args, **kwargs) -> C:
         return self
 
-    def execute(self, question: Question, *args: str) -> Optional[opcodes]:
+    def execute(self, question: T, *args: str) -> Optional[opcodes]:
         raise NotImplementedError(
             "Define a behaviour for this command using execute method."
         )
@@ -763,10 +771,10 @@ class Help(Command):
         stdout(self.get_message(question))
         return opcodes.CONTINUE
 
-    def get_message(self, question: Question) -> str:
+    def get_message(self, question: T) -> str:
         return self.message + self.get_available_commands(question)
 
-    def get_available_commands(self, question: Question) -> str:
+    def get_available_commands(self, question: T) -> str:
         if not self.with_command_list:
             return ""
 
