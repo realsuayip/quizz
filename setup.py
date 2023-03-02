@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="quizz",
-    version="0.4.1",
+    version="1.0.0",
     author="Şuayip Üzülmez",
     author_email="suayip.541@gmail.com",
     description="Wrappers around Python's print and input functions to create"
