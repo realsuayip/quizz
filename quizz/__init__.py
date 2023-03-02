@@ -29,12 +29,14 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Generator,
     Iterable,
     List,
     Optional,
     Tuple,
     Type,
     Union,
+    cast,
 )
 
 __version__ = "0.4.1"
@@ -84,6 +86,11 @@ def signal_hook(obj: Any, method: str) -> None:
         getattr(obj, method)(obj)
 
 
+def number_iterator(start: int) -> Generator[str, None, None]:
+    for num in itertools.count(start=start):
+        yield str(num)
+
+
 @dataclass
 class Scheme:
     """
@@ -98,7 +105,7 @@ class Scheme:
     options: Optional[List[Option]] = None
     commands: Optional[List[Union[Command, Type[Command]]]] = None
     correct_answers: Optional[List[str]] = None
-    extra: Optional[dict] = None
+    extra: Optional[dict[Any, Any]] = None
 
     required: Optional[bool] = None
     strip: Optional[bool] = None
@@ -113,7 +120,7 @@ class Scheme:
     choices: Optional[List[str]] = None
     display: Optional[str] = None
     style: Optional[str] = None
-    style_iterator: Optional[Iterable] = None
+    style_iterator: Optional[Iterable[str]] = None
 
 
 _field_names: List[str] = [f.name for f in fields(Scheme)]
@@ -143,7 +150,7 @@ class Question:
     options: List[Option] = field(default_factory=list)
     commands: List[Union[Command, Type[Command]]] = field(default_factory=list)
     correct_answers: List[str] = field(default_factory=list)
-    extra: dict = field(default_factory=dict)
+    extra: dict[Any, Any] = field(default_factory=dict)
 
     required: bool = True
     strip: bool = True
@@ -226,7 +233,7 @@ class Question:
 
         self.mounted_schemes.append(scheme)
 
-    def _ask(self) -> Optional[Union[opcodes, Tuple[Any]]]:
+    def _ask(self) -> Optional[Union[opcodes, Tuple[opcodes, Any]]]:
         """
         Internal ask method for: setting real input, getting command opcodes,
         validation and setting up signals.
@@ -356,7 +363,7 @@ class Question:
 
     def execute_command(
         self, request: str
-    ) -> Optional[Union[opcodes, Tuple[Any]]]:
+    ) -> Optional[Union[opcodes, Tuple[opcodes, Any]]]:
         """
         For inputs starting with command delimiter, check
         if such command exists, execute it if so, and return the opcode.
@@ -450,7 +457,7 @@ class MultipleChoiceQuestion(Question):
     choices: List[str] = field(default_factory=list)
     display: Optional[str] = "horizontal"
     style: str = "letter"
-    style_iterator: Optional[Iterable] = None
+    style_iterator: Optional[Iterable[str]] = None
 
     def __post_init__(self) -> None:
         self.primitive_options = self.options
@@ -482,17 +489,17 @@ class MultipleChoiceQuestion(Question):
             )
         ] + self.primitive_options
 
-    def get_style_iterator(self) -> Iterable:
+    def get_style_iterator(self) -> Iterable[str]:
         """
         A style iterator is any iterable that provides strings for option
         styles. For example "love" will output l) choice1 o) choice2 etc.
         """
 
-        styles: Dict[str, Iterable] = {
+        styles: Dict[str, Iterable[str]] = {
             "letter": string.ascii_letters,
             "letter_uppercase": string.ascii_uppercase,
-            "number": itertools.count(start=1),
-            "number_fromzero": itertools.count(start=0),
+            "number": number_iterator(start=1),
+            "number_fromzero": number_iterator(start=0),
         }
 
         # Check self.style for built-in styles, else look for a style_iterator.
@@ -528,7 +535,7 @@ class MultipleChoiceQuestion(Question):
                 % {"display": display}
             )
 
-        return getattr(self, "get_%s_display" % display)(prompt)
+        return cast(str, getattr(self, "get_%s_display" % display)(prompt))
 
     def _option_format(self) -> Iterable[str]:
         return (
@@ -559,7 +566,7 @@ class Quiz:
     """
 
     def __init__(
-        self, questions: List[Question], scheme: Scheme = None
+        self, questions: List[Question], scheme: Union[Scheme, None] = None
     ) -> None:
         """
         :param questions: A list of question objects.
@@ -668,7 +675,7 @@ class Quiz:
         self._done_verbose: bool = False  # noqa
 
     def _get_verbosity(self, name: str) -> bool:
-        return getattr(self, name) if hasattr(self, name) else True
+        return cast(bool, getattr(self, name)) if hasattr(self, name) else True
 
     def get_ready_message(self, verbose: bool) -> str:
         sequences = ", ".join(
@@ -725,10 +732,12 @@ class Command:
     expression: str = ""
     description: str = "No description provided."
 
-    def __call__(self, *args, **kwargs) -> Command:
+    def __call__(self, *args: Any, **kwargs: Any) -> Command:
         return self
 
-    def execute(self, question: Question, *args: str) -> Optional[opcodes]:
+    def execute(
+        self, question: Question, *args: str
+    ) -> Optional[Union[opcodes, Tuple[opcodes, Any]]]:
         raise NotImplementedError(
             "Define a behaviour for this command using execute method."
         )
@@ -738,7 +747,7 @@ class Skip(Command):
     expression = "skip"
     description = "Skips this question without answering."
 
-    def execute(self, question, *args):
+    def execute(self, question: Question, *args: Any) -> None:
         stdout("You decided to skip this question.")
         question.answer = None
 
@@ -747,7 +756,7 @@ class Quit(Command):
     expression = "quit"
     description = "Quits the program."
 
-    def execute(self, question, *args):
+    def execute(self, question: Question, *args: Any) -> None:
         sys.exit(0)
 
 
@@ -759,7 +768,7 @@ class Help(Command):
         self.message = message
         self.with_command_list = with_command_list
 
-    def execute(self, question, *args):
+    def execute(self, question: Question, *args: Any) -> opcodes:
         stdout(self.get_message(question))
         return opcodes.CONTINUE
 
@@ -784,7 +793,9 @@ class Jump(Command):
     expression = "jump"
     description = "Jumps to specified question. Usage: jump <number>"
 
-    def execute(self, question, *args):
+    def execute(
+        self, question: Question, *args: Any
+    ) -> Union[opcodes, Tuple[opcodes, int]]:
         if not args:
             stdout("Please specify a question number to jump.")
             return opcodes.CONTINUE
@@ -800,6 +811,7 @@ class Jump(Command):
 
         number = int(jump_to)
 
+        assert question.quiz is not None
         if number > len(question.quiz.questions):
             stdout("Can't jump to question %s, no such question." % number)
             return opcodes.CONTINUE
@@ -812,7 +824,8 @@ class Next(Command):
     expression = "next"
     description = "Jumps to next question."
 
-    def execute(self, question, *args):
+    def execute(self, question: Question, *args: Any) -> Tuple[opcodes, int]:
+        assert question.quiz is not None
         return opcodes.JUMP, question.quiz.index + 1
 
 
@@ -820,7 +833,8 @@ class Previous(Command):
     expression = "previous"
     description = "Jumps to previous question."
 
-    def execute(self, question, *args):
+    def execute(self, question: Question, *args: Any) -> Tuple[opcodes, int]:
+        assert question.quiz is not None
         return opcodes.JUMP, question.quiz.index - 1
 
 
@@ -828,7 +842,8 @@ class Finish(Command):
     expression = "finish"
     description = "Finishes the quiz."
 
-    def execute(self, question, *args):
+    def execute(self, question: Question, *args: Any) -> opcodes:
+        assert question.quiz is not None
         if question.quiz.is_ready:
             return opcodes.BREAK
 
@@ -847,7 +862,8 @@ class Answers(Command):
     expression = "answers"
     description = "Shows the current answers for each question in the quiz."
 
-    def execute(self, question, *args):
+    def execute(self, question: Question, *args: Any) -> opcodes:
+        assert question.quiz is not None
         clauses_with_answers = "\n".join(
             "%d. %s -> [%s]"
             % (
@@ -882,47 +898,49 @@ class ValidationError(Exception):
 
 
 class Validator:
-    def __init__(self, against=None, message: str = None):
+    def __init__(
+        self, against: Any = None, message: Union[str, None] = None
+    ) -> None:
         self.against = against
         self.message: str = (
             message if message is not None else "Your answer is not valid."
         )
 
-    def __call__(self, value: str):
+    def __call__(self, value: str) -> None:
         if not self.is_valid(value):
             raise ValidationError(self.message)
 
-    def is_valid(self, value: str):
+    def is_valid(self, value: str) -> bool:
         raise NotImplementedError(
             "You need to define your validation logic in is_valid method."
         )
 
 
 class MaxLengthValidator(Validator):
-    def is_valid(self, value):
-        return len(value) <= self.against
+    def is_valid(self, value: str) -> bool:
+        return len(value) <= cast(int, self.against)
 
 
 class MinLengthValidator(Validator):
-    def is_valid(self, value):
-        return len(value) >= self.against
+    def is_valid(self, value: str) -> bool:
+        return len(value) >= cast(int, self.against)
 
 
 class AlphaValidator(Validator):
-    def is_valid(self, value):
+    def is_valid(self, value: str) -> bool:
         return value.isalpha()
 
 
 class AlphaNumericValidator(Validator):
-    def is_valid(self, value):
+    def is_valid(self, value: str) -> bool:
         return value.isalnum()
 
 
 class DigitValidator(Validator):
-    def is_valid(self, value):
+    def is_valid(self, value: str) -> bool:
         return value.isdigit()
 
 
 class RegexValidator(Validator):
-    def is_valid(self, value):
+    def is_valid(self, value: str) -> bool:
         return bool(re.match(self.against, value))
